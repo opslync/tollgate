@@ -1,0 +1,16 @@
+# Build output
+/bin/
+/dist/
+
+# Local config and secrets
+config.yaml
+.env
+
+# SQLite databases (usage/audit storage)
+*.db
+*.db-journal
+*.db-wal
+*.db-shm
+
+# Test artifacts
+coverage.out

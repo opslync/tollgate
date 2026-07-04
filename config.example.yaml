@@ -1,0 +1,10 @@
+# Tollgate configuration.
+# Copy to config.yaml and adjust.
+
+server:
+  listen: ":8080"
+
+# Upstream LLM providers. Milestone 1 routes all traffic to the first entry.
+providers:
+  - name: anthropic
+    base_url: "https://api.anthropic.com"
