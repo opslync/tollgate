@@ -2,26 +2,68 @@ package proxy
 
 import (
 	"bufio"
+	"bytes"
 	"io"
 	"log/slog"
 	"net/http"
 	"net/http/httptest"
 	"net/url"
 	"strings"
+	"sync"
 	"testing"
 	"time"
 )
 
-func newTestProxy(t *testing.T, upstream string) *httptest.Server {
+// logBuffer is a goroutine-safe sink for the proxy's slog output.
+type logBuffer struct {
+	mu  sync.Mutex
+	buf bytes.Buffer
+}
+
+func (b *logBuffer) Write(p []byte) (int, error) {
+	b.mu.Lock()
+	defer b.mu.Unlock()
+	return b.buf.Write(p)
+}
+
+func (b *logBuffer) String() string {
+	b.mu.Lock()
+	defer b.mu.Unlock()
+	return b.buf.String()
+}
+
+func newTestProxyLogged(t *testing.T, upstream string) (*httptest.Server, *logBuffer) {
 	t.Helper()
 	u, err := url.Parse(upstream)
 	if err != nil {
 		t.Fatal(err)
 	}
-	logger := slog.New(slog.NewTextHandler(io.Discard, nil))
+	logs := &logBuffer{}
+	logger := slog.New(slog.NewTextHandler(logs, nil))
 	srv := httptest.NewServer(New("test", u, logger))
 	t.Cleanup(srv.Close)
+	return srv, logs
+}
+
+func newTestProxy(t *testing.T, upstream string) *httptest.Server {
+	t.Helper()
+	srv, _ := newTestProxyLogged(t, upstream)
 	return srv
+}
+
+// waitForLog polls for the proxy's request log line, which is written just
+// after the response body finishes streaming to the client.
+func waitForLog(t *testing.T, logs *logBuffer) string {
+	t.Helper()
+	deadline := time.Now().Add(2 * time.Second)
+	for time.Now().Before(deadline) {
+		if s := logs.String(); strings.Contains(s, "msg=request") {
+			return s
+		}
+		time.Sleep(5 * time.Millisecond)
+	}
+	t.Fatal("timed out waiting for request log line")
+	return ""
 }
 
 func TestPassthrough(t *testing.T) {
@@ -116,6 +158,79 @@ func TestStreamingFlush(t *testing.T) {
 	close(firstReceived)
 	if got := readEvent(); !strings.Contains(got, "event: two") {
 		t.Fatalf("second event = %q", got)
+	}
+}
+
+func TestUsageLoggedNonStreaming(t *testing.T) {
+	upstream := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		io.WriteString(w, `{"id":"msg_1","type":"message","model":"claude-sonnet-5","content":[],"usage":{"input_tokens":25,"output_tokens":50,"cache_creation_input_tokens":0,"cache_read_input_tokens":0}}`)
+	}))
+	defer upstream.Close()
+
+	proxy, logs := newTestProxyLogged(t, upstream.URL)
+
+	resp, err := http.Post(proxy.URL+"/v1/messages", "application/json", strings.NewReader(`{}`))
+	if err != nil {
+		t.Fatal(err)
+	}
+	io.Copy(io.Discard, resp.Body)
+	resp.Body.Close()
+
+	got := waitForLog(t, logs)
+	for _, want := range []string{"model=claude-sonnet-5", "input_tokens=25", "output_tokens=50", "stream=false", "status=200"} {
+		if !strings.Contains(got, want) {
+			t.Errorf("log missing %q:\n%s", want, got)
+		}
+	}
+}
+
+func TestUsageLoggedStreaming(t *testing.T) {
+	upstream := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "text/event-stream")
+		io.WriteString(w, "event: message_start\ndata: {\"type\":\"message_start\",\"message\":{\"model\":\"claude-sonnet-5\",\"usage\":{\"input_tokens\":472,\"output_tokens\":1}}}\n\n")
+		io.WriteString(w, "event: message_delta\ndata: {\"type\":\"message_delta\",\"usage\":{\"output_tokens\":91}}\n\n")
+		io.WriteString(w, "event: message_stop\ndata: {\"type\":\"message_stop\"}\n\n")
+	}))
+	defer upstream.Close()
+
+	proxy, logs := newTestProxyLogged(t, upstream.URL)
+
+	resp, err := http.Post(proxy.URL+"/v1/messages", "application/json", strings.NewReader(`{}`))
+	if err != nil {
+		t.Fatal(err)
+	}
+	io.Copy(io.Discard, resp.Body)
+	resp.Body.Close()
+
+	got := waitForLog(t, logs)
+	for _, want := range []string{"model=claude-sonnet-5", "input_tokens=472", "output_tokens=91", "stream=true"} {
+		if !strings.Contains(got, want) {
+			t.Errorf("log missing %q:\n%s", want, got)
+		}
+	}
+}
+
+func TestUsageUnknownOnErrorBody(t *testing.T) {
+	upstream := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusBadRequest)
+		io.WriteString(w, `{"type":"error","error":{"type":"invalid_request_error","message":"bad"}}`)
+	}))
+	defer upstream.Close()
+
+	proxy, logs := newTestProxyLogged(t, upstream.URL)
+
+	resp, err := http.Post(proxy.URL+"/v1/messages", "application/json", strings.NewReader(`{}`))
+	if err != nil {
+		t.Fatal(err)
+	}
+	io.Copy(io.Discard, resp.Body)
+	resp.Body.Close()
+
+	got := waitForLog(t, logs)
+	if !strings.Contains(got, "usage=unknown") || !strings.Contains(got, "status=400") {
+		t.Errorf("log missing usage=unknown/status=400:\n%s", got)
 	}
 }
 

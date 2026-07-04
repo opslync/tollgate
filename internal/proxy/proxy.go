@@ -5,11 +5,15 @@ package proxy
 
 import (
 	"context"
+	"io"
 	"log/slog"
 	"net/http"
 	"net/http/httputil"
 	"net/url"
+	"strings"
 	"time"
+
+	"github.com/opslync/tollgate/internal/meter"
 )
 
 type Proxy struct {
@@ -23,6 +27,8 @@ type Proxy struct {
 type reqState struct {
 	status int
 	err    error
+	stream bool
+	parser meter.Parser
 }
 
 type ctxKey struct{}
@@ -51,11 +57,37 @@ func New(provider string, upstream *url.URL, logger *slog.Logger) *Proxy {
 }
 
 func (p *Proxy) modifyResponse(resp *http.Response) error {
-	if state, ok := resp.Request.Context().Value(ctxKey{}).(*reqState); ok {
-		state.status = resp.StatusCode
+	state, ok := resp.Request.Context().Value(ctxKey{}).(*reqState)
+	if !ok {
+		return nil
+	}
+	state.status = resp.StatusCode
+
+	contentType := resp.Header.Get("Content-Type")
+	state.stream = strings.HasPrefix(contentType, "text/event-stream")
+	if parser := meter.ForResponse(contentType); parser != nil {
+		state.parser = parser
+		resp.Body = &meteringBody{rc: resp.Body, parser: parser}
 	}
 	return nil
 }
+
+// meteringBody tees response body bytes into the usage parser as the
+// ReverseProxy copies them to the client. The stream itself is untouched.
+type meteringBody struct {
+	rc     io.ReadCloser
+	parser meter.Parser
+}
+
+func (b *meteringBody) Read(p []byte) (int, error) {
+	n, err := b.rc.Read(p)
+	if n > 0 {
+		b.parser.Feed(p[:n])
+	}
+	return n, err
+}
+
+func (b *meteringBody) Close() error { return b.rc.Close() }
 
 // ServeHTTP forwards the request and, once the response body has fully
 // streamed to the client, emits one structured log line.
@@ -75,6 +107,22 @@ func (p *Proxy) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	}
 	if state.err != nil {
 		attrs = append(attrs, "error", state.err.Error())
+	}
+	// ReverseProxy has finished copying (and closed) the body by the time
+	// ServeHTTP returns, so the parser has seen the complete response.
+	if state.parser != nil {
+		if u, ok := state.parser.Finish(); ok {
+			attrs = append(attrs,
+				"model", u.Model,
+				"stream", state.stream,
+				"input_tokens", u.InputTokens,
+				"output_tokens", u.OutputTokens,
+				"cache_creation_input_tokens", u.CacheCreationInputTokens,
+				"cache_read_input_tokens", u.CacheReadInputTokens,
+			)
+		} else {
+			attrs = append(attrs, "usage", "unknown")
+		}
 	}
 	p.logger.Info("request", attrs...)
 }
