@@ -9,12 +9,14 @@ import (
 	"fmt"
 	"log/slog"
 	"net/http"
+	"net/url"
 	"os"
 	"os/signal"
 	"syscall"
 	"time"
 
 	"github.com/opslync/tollgate/internal/config"
+	"github.com/opslync/tollgate/internal/proxy"
 )
 
 func main() {
@@ -40,11 +42,18 @@ func run() error {
 		return err
 	}
 
+	provider := cfg.Providers[0]
+	upstream, err := url.Parse(provider.BaseURL)
+	if err != nil {
+		return err
+	}
+
 	mux := http.NewServeMux()
 	mux.HandleFunc("GET /healthz", func(w http.ResponseWriter, r *http.Request) {
 		w.WriteHeader(http.StatusOK)
 		fmt.Fprintln(w, "ok")
 	})
+	mux.Handle("/", proxy.New(provider.Name, upstream, logger))
 
 	srv := &http.Server{
 		Addr:              cfg.Server.Listen,
