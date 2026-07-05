@@ -105,6 +105,65 @@ func TestAggregateGroupByAndFilters(t *testing.T) {
 	}
 }
 
+func TestSpend(t *testing.T) {
+	s := openTestStore(t)
+	ctx := context.Background()
+	now := time.Now()
+
+	s.Insert(ctx, record("a", "t1", "m", 100, 50, 0.5, now))
+	s.Insert(ctx, record("a", "t1", "m", 200, 100, 1.0, now))
+	s.Insert(ctx, record("b", "t1", "m", 1000, 0, 3.0, now))
+	s.Insert(ctx, record("a", "t1", "m", 9999, 0, 99, now.Add(-2*time.Hour))) // outside window
+
+	usd, tokens, err := s.Spend(ctx, "agent", "a", now.Add(-time.Hour))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if math.Abs(usd-1.5) > 1e-9 || tokens != 450 {
+		t.Errorf("agent spend = $%v / %d tokens, want $1.5 / 450", usd, tokens)
+	}
+
+	usd, tokens, err = s.Spend(ctx, "team", "t1", now.Add(-time.Hour))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if math.Abs(usd-4.5) > 1e-9 || tokens != 1450 {
+		t.Errorf("team spend = $%v / %d tokens, want $4.5 / 1450", usd, tokens)
+	}
+
+	usd, tokens, err = s.Spend(ctx, "agent", "nobody", now.Add(-time.Hour))
+	if err != nil || usd != 0 || tokens != 0 {
+		t.Errorf("empty spend = $%v / %d / %v, want zeros", usd, tokens, err)
+	}
+
+	if _, _, err := s.Spend(ctx, "password", "x", now); err == nil {
+		t.Error("expected error for invalid dimension")
+	}
+}
+
+func TestKillPersistence(t *testing.T) {
+	s := openTestStore(t)
+	ctx := context.Background()
+
+	if err := s.Kill(ctx, "runaway-bot", time.Now()); err != nil {
+		t.Fatal(err)
+	}
+	if err := s.Kill(ctx, "runaway-bot", time.Now()); err != nil {
+		t.Fatalf("double kill must be idempotent: %v", err)
+	}
+	kills, err := s.Kills(ctx)
+	if err != nil || len(kills) != 1 || kills[0] != "runaway-bot" {
+		t.Fatalf("kills = %v, %v", kills, err)
+	}
+	if err := s.Revive(ctx, "runaway-bot"); err != nil {
+		t.Fatal(err)
+	}
+	kills, _ = s.Kills(ctx)
+	if len(kills) != 0 {
+		t.Errorf("kills after revive = %v", kills)
+	}
+}
+
 // TestConcurrentInserts exercises the WAL/busy_timeout setup with parallel
 // writers, matching how request goroutines insert in production.
 func TestConcurrentInserts(t *testing.T) {

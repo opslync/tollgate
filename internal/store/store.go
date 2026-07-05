@@ -38,6 +38,10 @@ CREATE TABLE IF NOT EXISTS requests (
 );
 CREATE INDEX IF NOT EXISTS idx_requests_ts ON requests(ts);
 CREATE INDEX IF NOT EXISTS idx_requests_agent_ts ON requests(agent, ts);
+CREATE TABLE IF NOT EXISTS kills (
+	agent TEXT PRIMARY KEY,
+	ts INTEGER NOT NULL
+);
 `
 
 type Store struct {
@@ -96,6 +100,53 @@ func (s *Store) Insert(ctx context.Context, r Record) error {
 		r.Usage.CacheCreationInputTokens, r.Usage.CacheReadInputTokens, r.CostUSD,
 	)
 	return err
+}
+
+// Spend returns the dollar and token (input+output) totals since the given
+// time for one agent or team. dim must be "agent" or "team".
+func (s *Store) Spend(ctx context.Context, dim, value string, since time.Time) (usd float64, tokens int64, err error) {
+	col, ok := map[string]string{"agent": "agent", "team": "team"}[dim]
+	if !ok {
+		return 0, 0, fmt.Errorf("invalid spend dimension %q", dim)
+	}
+	row := s.db.QueryRowContext(ctx, `
+		SELECT COALESCE(SUM(cost_usd), 0), COALESCE(SUM(input_tokens + output_tokens), 0)
+		FROM requests WHERE `+col+` = ? AND ts >= ?`,
+		value, since.UnixMilli())
+	err = row.Scan(&usd, &tokens)
+	return usd, tokens, err
+}
+
+// Kill persists the kill switch for an agent so a restart doesn't revive it.
+func (s *Store) Kill(ctx context.Context, agent string, at time.Time) error {
+	_, err := s.db.ExecContext(ctx,
+		`INSERT INTO kills (agent, ts) VALUES (?, ?) ON CONFLICT(agent) DO NOTHING`,
+		agent, at.UnixMilli())
+	return err
+}
+
+// Revive removes an agent's kill entry.
+func (s *Store) Revive(ctx context.Context, agent string) error {
+	_, err := s.db.ExecContext(ctx, `DELETE FROM kills WHERE agent = ?`, agent)
+	return err
+}
+
+// Kills lists currently killed agents.
+func (s *Store) Kills(ctx context.Context) ([]string, error) {
+	rows, err := s.db.QueryContext(ctx, `SELECT agent FROM kills ORDER BY agent`)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var agents []string
+	for rows.Next() {
+		var a string
+		if err := rows.Scan(&a); err != nil {
+			return nil, err
+		}
+		agents = append(agents, a)
+	}
+	return agents, rows.Err()
 }
 
 // groupByColumns is the allowlist for GET /usage grouping; the map value is
