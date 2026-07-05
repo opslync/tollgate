@@ -76,6 +76,11 @@ type Storage struct {
 type Provider struct {
 	Name    string `yaml:"name"`
 	BaseURL string `yaml:"base_url"`
+	// Type selects the wire protocol: "anthropic" (default) or "openai"
+	// (OpenAI-compatible, incl. vLLM). It decides usage parsing, credential
+	// header, and which paths route here (/v1/chat/completions etc. go to
+	// the openai provider).
+	Type string `yaml:"type"`
 	// APIKey, when set, replaces the caller's credentials on the upstream
 	// request. Supports ${ENV_VAR} references so secrets stay out of YAML.
 	APIKey string `yaml:"api_key"`
@@ -130,6 +135,7 @@ func (c *Config) validate() error {
 		return fmt.Errorf("at least one provider must be configured")
 	}
 	seen := make(map[string]bool)
+	seenType := make(map[string]string)
 	for i, p := range c.Providers {
 		if p.Name == "" {
 			return fmt.Errorf("providers[%d]: name must be set", i)
@@ -138,6 +144,17 @@ func (c *Config) validate() error {
 			return fmt.Errorf("providers[%d]: duplicate name %q", i, p.Name)
 		}
 		seen[p.Name] = true
+		if p.Type != "" && p.Type != "anthropic" && p.Type != "openai" {
+			return fmt.Errorf("providers[%d] (%s): type must be anthropic or openai, got %q", i, p.Name, p.Type)
+		}
+		typ := p.Type
+		if typ == "" {
+			typ = "anthropic"
+		}
+		if other, dup := seenType[typ]; dup {
+			return fmt.Errorf("providers[%d] (%s): only one provider per type for now (%s is already %s)", i, p.Name, other, typ)
+		}
+		seenType[typ] = p.Name
 		u, err := url.Parse(p.BaseURL)
 		if err != nil {
 			return fmt.Errorf("providers[%d] (%s): invalid base_url: %w", i, p.Name, err)
@@ -205,8 +222,13 @@ func (b Budget) target() string {
 	return "team " + b.Team
 }
 
-// applyDefaults fills optional budget fields after validation.
+// applyDefaults fills optional fields after validation.
 func (c *Config) applyDefaults() {
+	for i := range c.Providers {
+		if c.Providers[i].Type == "" {
+			c.Providers[i].Type = "anthropic"
+		}
+	}
 	for i := range c.Budgets {
 		b := &c.Budgets[i]
 		if b.AlertAt == 0 {

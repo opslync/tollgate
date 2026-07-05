@@ -77,6 +77,50 @@ providers:
 	}
 }
 
+func TestProviderTypes(t *testing.T) {
+	cfg, err := Load(writeConfig(t, `
+server:
+  listen: ":8080"
+providers:
+  - name: anthropic
+    base_url: "https://api.anthropic.com"
+  - name: vllm
+    type: openai
+    base_url: "http://vllm.internal:8000"
+`))
+	if err != nil {
+		t.Fatalf("Load: %v", err)
+	}
+	if cfg.Providers[0].Type != "anthropic" || cfg.Providers[1].Type != "openai" {
+		t.Errorf("types = %q, %q", cfg.Providers[0].Type, cfg.Providers[1].Type)
+	}
+
+	for name, yaml := range map[string]string{
+		"bad type": `
+server:
+  listen: ":8080"
+providers:
+  - name: a
+    type: gemini
+    base_url: "https://x"
+`,
+		"two of same type": `
+server:
+  listen: ":8080"
+providers:
+  - name: a
+    base_url: "https://x"
+  - name: b
+    type: anthropic
+    base_url: "https://y"
+`,
+	} {
+		if _, err := Load(writeConfig(t, yaml)); err == nil {
+			t.Errorf("%s: expected error", name)
+		}
+	}
+}
+
 func TestLoadBudgets(t *testing.T) {
 	cfg, err := Load(writeConfig(t, `
 server:

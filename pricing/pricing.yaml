@@ -51,3 +51,28 @@ models:
     output_per_mtok: 5.00
     cache_write_per_mtok: 1.25
     cache_read_per_mtok: 0.10
+  # OpenAI models (verify against openai.com/api/pricing before relying on
+  # these for billing — we maintain this table manually). OpenAI does not
+  # charge cache writes; cached reads bill via cache_read.
+  gpt-5:
+    input_per_mtok: 1.25
+    output_per_mtok: 10.00
+    cache_read_per_mtok: 0.125
+  gpt-5-mini:
+    input_per_mtok: 0.25
+    output_per_mtok: 2.00
+    cache_read_per_mtok: 0.025
+  gpt-5-nano:
+    input_per_mtok: 0.05
+    output_per_mtok: 0.40
+    cache_read_per_mtok: 0.005
+  gpt-4o:
+    input_per_mtok: 2.50
+    output_per_mtok: 10.00
+    cache_read_per_mtok: 1.25
+  gpt-4o-mini:
+    input_per_mtok: 0.15
+    output_per_mtok: 0.60
+    cache_read_per_mtok: 0.075
+  # Self-hosted vLLM models cost nothing per token by default; add entries
+  # here if you want to attribute an internal cost rate to them.
