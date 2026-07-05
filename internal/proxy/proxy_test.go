@@ -43,7 +43,7 @@ func newTestProxyLogged(t *testing.T, upstream string) (*httptest.Server, *logBu
 	}
 	logs := &logBuffer{}
 	logger := slog.New(slog.NewTextHandler(logs, nil))
-	srv := httptest.NewServer(New("test", u, "", logger))
+	srv := httptest.NewServer(New(Options{Name: "test", Upstream: u}, logger))
 	t.Cleanup(srv.Close)
 	return srv, logs
 }
@@ -251,7 +251,7 @@ func TestProviderKeyInjection(t *testing.T) {
 
 	u, _ := url.Parse(upstream.URL)
 	logger := slog.New(slog.NewTextHandler(io.Discard, nil))
-	srv := httptest.NewServer(New("test", u, "sk-ant-provider-key", logger))
+	srv := httptest.NewServer(New(Options{Name: "test", Upstream: u, APIKey: "sk-ant-provider-key"}, logger))
 	defer srv.Close()
 
 	for _, header := range []string{"x-api-key", "Authorization"} {
@@ -289,7 +289,7 @@ func TestAttributionLogged(t *testing.T) {
 	authn := auth.New([]config.Agent{
 		{Name: "support-bot", Key: "tg_agent_key_0123456789abcdef", Team: "support", Namespace: "prod"},
 	})
-	srv := httptest.NewServer(authn.Middleware(New("test", u, "sk-real", logger)))
+	srv := httptest.NewServer(authn.Middleware(New(Options{Name: "test", Upstream: u, APIKey: "sk-real"}, logger)))
 	defer srv.Close()
 
 	req, _ := http.NewRequest(http.MethodPost, srv.URL+"/v1/messages", strings.NewReader(`{}`))
@@ -318,7 +318,7 @@ func TestRecorderReceivesCompletedRequest(t *testing.T) {
 
 	u, _ := url.Parse(upstream.URL)
 	logger := slog.New(slog.NewTextHandler(io.Discard, nil))
-	p := New("test", u, "sk-real", logger)
+	p := New(Options{Name: "test", Upstream: u, APIKey: "sk-real"}, logger)
 
 	recorded := make(chan RequestRecord, 1)
 	p.SetRecorder(func(rec RequestRecord) { recorded <- rec })
@@ -352,6 +352,47 @@ func TestRecorderReceivesCompletedRequest(t *testing.T) {
 		}
 	case <-time.After(2 * time.Second):
 		t.Fatal("recorder was never called")
+	}
+}
+
+// TestOpenAIProvider covers the M5 additions: bearer-token injection and
+// OpenAI usage parsing through the proxy.
+func TestOpenAIProvider(t *testing.T) {
+	var gotAuthz, gotAPIKey string
+	upstream := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		gotAuthz = r.Header.Get("Authorization")
+		gotAPIKey = r.Header.Get("x-api-key")
+		w.Header().Set("Content-Type", "application/json")
+		io.WriteString(w, `{"model":"gpt-5","choices":[],"usage":{"prompt_tokens":57,"completion_tokens":17,"prompt_tokens_details":{"cached_tokens":32}}}`)
+	}))
+	defer upstream.Close()
+
+	u, _ := url.Parse(upstream.URL)
+	logs := &logBuffer{}
+	logger := slog.New(slog.NewTextHandler(logs, nil))
+	srv := httptest.NewServer(New(Options{Name: "vllm", Type: "openai", Upstream: u, APIKey: "sk-openai-real"}, logger))
+	defer srv.Close()
+
+	req, _ := http.NewRequest(http.MethodPost, srv.URL+"/v1/chat/completions", strings.NewReader(`{}`))
+	req.Header.Set("Authorization", "Bearer tg_agent_key_0123456789abcdef")
+	resp, err := http.DefaultClient.Do(req)
+	if err != nil {
+		t.Fatal(err)
+	}
+	io.Copy(io.Discard, resp.Body)
+	resp.Body.Close()
+
+	if gotAuthz != "Bearer sk-openai-real" {
+		t.Errorf("upstream Authorization = %q, want provider bearer", gotAuthz)
+	}
+	if gotAPIKey != "" {
+		t.Errorf("x-api-key leaked upstream: %q", gotAPIKey)
+	}
+	got := waitForLog(t, logs)
+	for _, want := range []string{"provider=vllm", "model=gpt-5", "input_tokens=25", "output_tokens=17", "cache_read_input_tokens=32"} {
+		if !strings.Contains(got, want) {
+			t.Errorf("log missing %q:\n%s", want, got)
+		}
 	}
 }
 

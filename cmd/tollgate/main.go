@@ -12,6 +12,7 @@ import (
 	"net/url"
 	"os"
 	"os/signal"
+	"strings"
 	"syscall"
 	"time"
 
@@ -47,12 +48,6 @@ func run() error {
 		return err
 	}
 
-	provider := cfg.Providers[0]
-	upstream, err := url.Parse(provider.BaseURL)
-	if err != nil {
-		return err
-	}
-
 	prices, err := pricing.Load()
 	if err != nil {
 		return err
@@ -70,8 +65,7 @@ func run() error {
 	}
 	logger.Info("budget enforcement ready", "budgets", len(cfg.Budgets))
 
-	p := proxy.New(provider.Name, upstream, provider.APIKey, logger)
-	p.SetRecorder(func(rec proxy.RequestRecord) {
+	recorder := func(rec proxy.RequestRecord) {
 		record := store.Record{
 			Time: rec.Time, Agent: rec.Agent.Name, Team: rec.Agent.Team,
 			Namespace: rec.Agent.Namespace, Provider: rec.Provider,
@@ -92,7 +86,22 @@ func run() error {
 			logger.Error("failed to persist usage record", "error", err)
 		}
 		engine.Record(rec.Agent, rec.Usage.InputTokens+rec.Usage.OutputTokens, record.CostUSD)
-	})
+	}
+
+	// One proxy per configured provider; requests route by path below.
+	proxies := map[string]*proxy.Proxy{} // keyed by provider type
+	for _, prov := range cfg.Providers {
+		upstream, err := url.Parse(prov.BaseURL)
+		if err != nil {
+			return err
+		}
+		p := proxy.New(proxy.Options{
+			Name: prov.Name, Type: prov.Type, Upstream: upstream, APIKey: prov.APIKey,
+		}, logger)
+		p.SetRecorder(recorder)
+		proxies[prov.Type] = p
+	}
+	defaultProxy := proxies[cfg.Providers[0].Type]
 
 	authn := auth.New(cfg.Agents)
 	wrap := func(h http.Handler) http.Handler { return h }
@@ -108,7 +117,21 @@ func run() error {
 		fmt.Fprintln(w, "ok")
 	})
 	mux.Handle("GET /usage", wrap(api.UsageHandler(st)))
-	mux.Handle("/", wrap(engine.Middleware(p)))
+
+	// Path-based provider routing keeps agents drop-in: OpenAI-style paths
+	// go to the openai provider, Anthropic paths to the anthropic provider,
+	// anything else to the first configured provider.
+	route := func(p *proxy.Proxy) http.Handler { return wrap(engine.Middleware(p)) }
+	if p, ok := proxies["openai"]; ok {
+		for _, path := range []string{"/v1/chat/completions", "/v1/completions", "/v1/embeddings"} {
+			mux.Handle(path, route(p))
+		}
+	}
+	if p, ok := proxies["anthropic"]; ok {
+		mux.Handle("/v1/messages", route(p))
+		mux.Handle("/v1/messages/", route(p))
+	}
+	mux.Handle("/", route(defaultProxy))
 
 	if cfg.Server.AdminKey != "" {
 		agentNames := make([]string, len(cfg.Agents))
@@ -132,7 +155,11 @@ func run() error {
 
 	errCh := make(chan error, 1)
 	go func() {
-		logger.Info("tollgate listening", "addr", cfg.Server.Listen, "provider", cfg.Providers[0].Name)
+		names := make([]string, len(cfg.Providers))
+		for i, prov := range cfg.Providers {
+			names[i] = prov.Name + "(" + prov.Type + ")"
+		}
+		logger.Info("tollgate listening", "addr", cfg.Server.Listen, "providers", strings.Join(names, ","))
 		errCh <- srv.ListenAndServe()
 	}()
 

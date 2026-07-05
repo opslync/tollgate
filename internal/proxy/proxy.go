@@ -17,10 +17,22 @@ import (
 	"github.com/opslync/tollgate/internal/meter"
 )
 
+// Options describes one upstream provider.
+type Options struct {
+	Name     string
+	Type     string // "anthropic" or "openai" — selects usage parser and credential header
+	Upstream *url.URL
+	// APIKey, when non-empty, terminates the caller's credentials here and
+	// is injected upstream in the provider's native header; when empty,
+	// credentials pass through.
+	APIKey string
+}
+
 type Proxy struct {
 	rp       *httputil.ReverseProxy
 	logger   *slog.Logger
 	provider string
+	ptype    string
 	recorder Recorder
 }
 
@@ -59,22 +71,28 @@ type reqState struct {
 
 type ctxKey struct{}
 
-// New builds a proxy for one upstream provider. When apiKey is non-empty the
-// caller's credentials (their Tollgate agent key) are terminated here and the
-// provider key is injected upstream; when empty, credentials pass through.
-func New(provider string, upstream *url.URL, apiKey string, logger *slog.Logger) *Proxy {
-	p := &Proxy{logger: logger, provider: provider}
+// New builds a proxy for one upstream provider.
+func New(opts Options, logger *slog.Logger) *Proxy {
+	if opts.Type == "" {
+		opts.Type = "anthropic"
+	}
+	p := &Proxy{logger: logger, provider: opts.Name, ptype: opts.Type}
 	p.rp = &httputil.ReverseProxy{
 		Rewrite: func(pr *httputil.ProxyRequest) {
-			pr.SetURL(upstream)
+			pr.SetURL(opts.Upstream)
 			// Let our transport negotiate gzip and decompress transparently,
 			// so the usage parser always sees plaintext.
 			pr.Out.Header.Del("Accept-Encoding")
-			if apiKey != "" {
-				pr.Out.Header.Set("x-api-key", apiKey)
-				// The agent key must not leak upstream, whichever header
-				// it arrived in.
-				pr.Out.Header.Del("Authorization")
+			if opts.APIKey != "" {
+				// The agent key must not leak upstream, whichever header it
+				// arrived in; the provider key goes in its native header.
+				if opts.Type == "openai" {
+					pr.Out.Header.Set("Authorization", "Bearer "+opts.APIKey)
+					pr.Out.Header.Del("x-api-key")
+				} else {
+					pr.Out.Header.Set("x-api-key", opts.APIKey)
+					pr.Out.Header.Del("Authorization")
+				}
 			}
 		},
 		// Flush immediately: SSE events must reach the agent as they arrive.
@@ -100,7 +118,7 @@ func (p *Proxy) modifyResponse(resp *http.Response) error {
 
 	contentType := resp.Header.Get("Content-Type")
 	state.stream = strings.HasPrefix(contentType, "text/event-stream")
-	if parser := meter.ForResponse("anthropic", contentType); parser != nil {
+	if parser := meter.ForResponse(p.ptype, contentType); parser != nil {
 		state.parser = parser
 		resp.Body = &meteringBody{rc: resp.Body, parser: parser}
 	}
