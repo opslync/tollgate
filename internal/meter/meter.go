@@ -21,18 +21,26 @@ type Parser interface {
 	Finish() (u Usage, ok bool)
 }
 
-// ForResponse returns a parser for an Anthropic response body based on its
+// ForResponse returns a usage parser for a provider's response body based
+// on the provider type ("anthropic" or "openai") and the response
 // Content-Type, or nil when the content type carries no parseable usage.
-func ForResponse(contentType string) Parser {
+func ForResponse(providerType, contentType string) Parser {
 	mediaType, _, err := mime.ParseMediaType(contentType)
 	if err != nil {
 		return nil
 	}
+	openai := providerType == "openai"
 	switch mediaType {
 	case "application/json":
+		if openai {
+			return &openaiJSONParser{}
+		}
 		return &jsonParser{}
 	case "text/event-stream":
-		return &sseParser{}
+		if openai {
+			return newOpenAISSE()
+		}
+		return newAnthropicSSE()
 	default:
 		return nil
 	}

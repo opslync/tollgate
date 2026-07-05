@@ -100,7 +100,7 @@ func (p *Proxy) modifyResponse(resp *http.Response) error {
 
 	contentType := resp.Header.Get("Content-Type")
 	state.stream = strings.HasPrefix(contentType, "text/event-stream")
-	if parser := meter.ForResponse(contentType); parser != nil {
+	if parser := meter.ForResponse("anthropic", contentType); parser != nil {
 		state.parser = parser
 		resp.Body = &meteringBody{rc: resp.Body, parser: parser}
 	}

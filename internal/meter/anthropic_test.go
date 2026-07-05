@@ -27,7 +27,7 @@ func TestForResponse(t *testing.T) {
 		{"", false},
 	}
 	for _, tt := range tests {
-		if got := ForResponse(tt.contentType) != nil; got != tt.wantParser {
+		if got := ForResponse("anthropic", tt.contentType) != nil; got != tt.wantParser {
 			t.Errorf("ForResponse(%q) parser = %v, want %v", tt.contentType, got, tt.wantParser)
 		}
 	}
@@ -38,7 +38,7 @@ func TestJSONParser(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	p := ForResponse("application/json")
+	p := ForResponse("anthropic", "application/json")
 	feedInChunks(p, data, 7)
 
 	u, ok := p.Finish()
@@ -67,7 +67,7 @@ func TestJSONParserNoUsage(t *testing.T) {
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			p := ForResponse("application/json")
+			p := ForResponse("anthropic", "application/json")
 			p.Feed([]byte(tt.body))
 			if _, ok := p.Finish(); ok {
 				t.Error("Finish ok = true, want false")
@@ -97,7 +97,7 @@ func TestSSEParser(t *testing.T) {
 	}
 	// Small chunks exercise partial-line reassembly across Feed calls.
 	for _, chunkSize := range []int{1, 7, len(data)} {
-		p := ForResponse("text/event-stream")
+		p := ForResponse("anthropic", "text/event-stream")
 		feedInChunks(p, data, chunkSize)
 
 		u, ok := p.Finish()
@@ -120,7 +120,7 @@ func TestSSEParser(t *testing.T) {
 func TestSSEParserCRLF(t *testing.T) {
 	stream := "data: {\"type\":\"message_start\",\"message\":{\"model\":\"m\",\"usage\":{\"input_tokens\":10}}}\r\n\r\n" +
 		"data: {\"type\":\"message_delta\",\"usage\":{\"output_tokens\":5}}\r\n\r\n"
-	p := ForResponse("text/event-stream")
+	p := ForResponse("anthropic", "text/event-stream")
 	p.Feed([]byte(stream))
 	u, ok := p.Finish()
 	if !ok || u.InputTokens != 10 || u.OutputTokens != 5 {
@@ -129,7 +129,7 @@ func TestSSEParserCRLF(t *testing.T) {
 }
 
 func TestSSEParserNoUsage(t *testing.T) {
-	p := ForResponse("text/event-stream")
+	p := ForResponse("anthropic", "text/event-stream")
 	p.Feed([]byte("event: ping\ndata: {\"type\":\"ping\"}\n\ndata: not json\n\n"))
 	if _, ok := p.Finish(); ok {
 		t.Error("Finish ok = true, want false")
@@ -137,7 +137,7 @@ func TestSSEParserNoUsage(t *testing.T) {
 }
 
 func TestSSEParserLongLineDiscarded(t *testing.T) {
-	p := ForResponse("text/event-stream")
+	p := ForResponse("anthropic", "text/event-stream")
 	// An oversized data line is dropped without corrupting later parsing.
 	p.Feed([]byte("data: " + strings.Repeat("x", maxSSELine+1) + "\n"))
 	p.Feed([]byte("data: {\"type\":\"message_start\",\"message\":{\"model\":\"m\",\"usage\":{\"input_tokens\":3}}}\n"))

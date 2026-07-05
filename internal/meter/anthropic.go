@@ -71,51 +71,24 @@ func (p *jsonParser) Finish() (Usage, bool) {
 	return u, true
 }
 
-// sseParser scans a streaming response line by line without buffering the
-// stream. For the Messages API, `message_start` carries the model and input
-// (+ cache) tokens; the final `message_delta` carries the output tokens.
+// sseParser scans an Anthropic streaming response. For the Messages API,
+// `message_start` carries the model and input (+ cache) tokens; the final
+// `message_delta` carries the output tokens.
 type sseParser struct {
-	line    []byte
-	discard bool
+	scanner sseScanner
 	usage   Usage
 	seen    bool
 }
 
-func (p *sseParser) Feed(b []byte) {
-	for len(b) > 0 {
-		i := bytes.IndexByte(b, '\n')
-		if i < 0 {
-			p.append(b)
-			return
-		}
-		p.append(b[:i])
-		if !p.discard {
-			p.handleLine(p.line)
-		}
-		p.line = p.line[:0]
-		p.discard = false
-		b = b[i+1:]
-	}
+func newAnthropicSSE() *sseParser {
+	p := &sseParser{}
+	p.scanner.onData = p.handleData
+	return p
 }
 
-func (p *sseParser) append(b []byte) {
-	if p.discard {
-		return
-	}
-	if len(p.line)+len(b) > maxSSELine {
-		p.discard = true
-		p.line = p.line[:0]
-		return
-	}
-	p.line = append(p.line, b...)
-}
+func (p *sseParser) Feed(b []byte) { p.scanner.Feed(b) }
 
-func (p *sseParser) handleLine(line []byte) {
-	line = bytes.TrimSuffix(line, []byte("\r"))
-	data, ok := bytes.CutPrefix(line, []byte("data:"))
-	if !ok {
-		return
-	}
+func (p *sseParser) handleData(data []byte) {
 	var ev struct {
 		Type    string `json:"type"`
 		Message *struct {
@@ -124,7 +97,7 @@ func (p *sseParser) handleLine(line []byte) {
 		} `json:"message"`
 		Usage *usageJSON `json:"usage"`
 	}
-	if json.Unmarshal(bytes.TrimSpace(data), &ev) != nil {
+	if json.Unmarshal(data, &ev) != nil {
 		return
 	}
 	switch ev.Type {

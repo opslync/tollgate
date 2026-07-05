@@ -1,0 +1,12 @@
+data: {"id":"chatcmpl-abc123","object":"chat.completion.chunk","created":1751700000,"model":"gpt-5","choices":[{"index":0,"delta":{"role":"assistant","content":""},"finish_reason":null}],"usage":null}
+
+data: {"id":"chatcmpl-abc123","object":"chat.completion.chunk","created":1751700000,"model":"gpt-5","choices":[{"index":0,"delta":{"content":"Hello"},"finish_reason":null}],"usage":null}
+
+data: {"id":"chatcmpl-abc123","object":"chat.completion.chunk","created":1751700000,"model":"gpt-5","choices":[{"index":0,"delta":{"content":" world"},"finish_reason":null}],"usage":null}
+
+data: {"id":"chatcmpl-abc123","object":"chat.completion.chunk","created":1751700000,"model":"gpt-5","choices":[{"index":0,"delta":{},"finish_reason":"stop"}],"usage":null}
+
+data: {"id":"chatcmpl-abc123","object":"chat.completion.chunk","created":1751700000,"model":"gpt-5","choices":[],"usage":{"prompt_tokens":57,"completion_tokens":17,"total_tokens":74,"prompt_tokens_details":{"cached_tokens":32}}}
+
+data: [DONE]
+

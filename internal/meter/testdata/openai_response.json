@@ -1,0 +1,1 @@
+{"id":"chatcmpl-abc123","object":"chat.completion","created":1751700000,"model":"gpt-5","choices":[{"index":0,"message":{"role":"assistant","content":"Hello! How can I help?"},"finish_reason":"stop"}],"usage":{"prompt_tokens":57,"completion_tokens":17,"total_tokens":74,"prompt_tokens_details":{"cached_tokens":32},"completion_tokens_details":{"reasoning_tokens":0}}}
