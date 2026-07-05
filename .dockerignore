@@ -1,0 +1,12 @@
+bin/
+dist/
+*.db
+*.db-*
+.git/
+.github/
+.claude/
+config.yaml
+.env
+coverage.out
+Dockerfile
+deploy/
