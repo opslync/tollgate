@@ -164,8 +164,10 @@ var ErrInvalidGroupBy = errors.New("invalid group_by")
 
 type AggregateOptions struct {
 	GroupBy string // one of groupByColumns; default "agent"
-	Since   time.Time
-	Until   time.Time
+	// The window is inclusive on both ends (millisecond resolution):
+	// a request recorded in the same millisecond as Until=now must count.
+	Since time.Time
+	Until time.Time
 	Agent   string // optional filter
 	Model   string // optional filter
 }
@@ -195,7 +197,7 @@ func (s *Store) Aggregate(ctx context.Context, opts AggregateOptions) ([]Row, er
 			SUM(cache_creation_input_tokens), SUM(cache_read_input_tokens),
 			SUM(cost_usd)
 		FROM requests
-		WHERE ts >= ? AND ts < ?`
+		WHERE ts >= ? AND ts <= ?`
 	args := []any{opts.Since.UnixMilli(), opts.Until.UnixMilli()}
 	if opts.Agent != "" {
 		query += " AND agent = ?"
