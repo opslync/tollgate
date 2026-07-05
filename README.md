@@ -20,7 +20,7 @@ Cost governance is the wedge; MCP tool-call policy (allow-lists, deny-by-default
 
 ## Status
 
-Early development. Milestones 1–3 shipped: transparent passthrough proxy (streaming included), per-agent identity via API keys, and SQLite metering with dollar-cost conversion + a `GET /usage` API. Next up: budgets with real-time enforcement.
+Early development. Milestones 1–4 shipped: transparent passthrough proxy (streaming included), per-agent identity via API keys, SQLite metering with dollar-cost conversion + `GET /usage`, and budgets with real-time enforcement + kill switch. Next up: OpenAI-compatible endpoints (vLLM and friends).
 
 ## Quickstart
 
@@ -57,6 +57,26 @@ curl "http://localhost:8080/usage?group_by=agent&since=24h" -H "x-api-key: $TOLL
 
 `group_by` accepts `agent`, `team`, `namespace`, `model`, or `provider`; `since`/`until` take durations (`24h`) or RFC3339 timestamps; `agent=`/`model=` filter.
 
+### Budgets and the kill switch
+
+Give agents or teams rolling-window budgets; Tollgate enforces them in real time — a runaway loop is counted request by request, not at the next billing sync:
+
+```yaml
+budgets:
+  - agent: support-bot
+    window: 24h
+    limit_usd: 10.00
+    action: block        # or throttle: 429 + Retry-After, one request per interval
+```
+
+At 80% of the limit (configurable) Tollgate logs a warning; at the limit it blocks with a `budget_exceeded` error or throttles with `rate_limit_error` — both in the Anthropic error shape, so SDKs back off natively. And when something is truly on fire:
+
+```sh
+curl -X POST http://localhost:8080/admin/agents/support-bot/kill -H "x-admin-key: $ADMIN_KEY"
+```
+
+The kill takes effect on the very next request (milliseconds, not minutes), survives restarts, and lifts with `DELETE` on the same path.
+
 ## Roadmap
 
 | Milestone | Scope |
@@ -64,7 +84,7 @@ curl "http://localhost:8080/usage?group_by=agent&since=24h" -H "x-api-key: $TOLL
 | 1 ✅ | Transparent passthrough proxy (Anthropic, streaming included), token usage logged |
 | 2 ✅ | Agent identity via API keys, per-agent attribution |
 | 3 ✅ | SQLite metering, cost conversion via versioned pricing table, `GET /usage` |
-| 4 | Budgets with enforcement — alert / throttle / block — and kill switch |
+| 4 ✅ | Budgets with enforcement — alert / throttle / block — and kill switch |
 | 5 | OpenAI-compatible endpoint support (vLLM and most agent frameworks) |
 | 6 | Helm chart + kind quickstart |
 | Later | MCP tool-call policy, web dashboard |

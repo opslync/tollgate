@@ -31,16 +31,22 @@ internal/auth/     — agent-key authentication middleware, agent identity in co
 internal/proxy/    — reverse proxy, streaming passthrough, key injection, logging, Recorder hook
 internal/meter/    — provider response parsing → token usage
 internal/store/    — SQLite persistence (modernc.org/sqlite, pure Go) + aggregation
-internal/api/      — Tollgate's own endpoints (GET /usage)
+internal/api/      — Tollgate's own endpoints (GET /usage, /admin kill switch)
+internal/budget/   — budget engine + enforcement middleware (alert/throttle/block/kill)
 pricing/           — versioned pricing.yaml (embedded via go:embed) + cost conversion
 ```
 
-Later milestones add `internal/budget` (M4) and `deploy/helm` (M6). Don't create directories before their milestone.
+Later milestones add `deploy/helm` (M6). Don't create directories before their milestone.
 
 Metering notes:
 - Cost is computed and stored at request time — pricing table updates never rewrite history. Unknown models record cost 0 with a warning log.
 - SQLite runs WAL + busy_timeout(5000); the pure-Go driver keeps `CGO_ENABLED=0` static builds (it also forced go.mod to go 1.25).
 - `GET /usage` group_by is an allowlist (agent/team/namespace/model/provider) — never interpolate caller input into SQL.
+
+Budget enforcement notes:
+- Middleware order is auth → budget → proxy. Spend counters live in memory: seeded/re-synced from the store every 5s (which ages spend out of rolling windows) plus live increments per completed request — runaway loops are caught request-by-request. Bias is fail-closed (brief overcount possible, undercount not); storage errors enforce with stale counters rather than failing requests.
+- Enforcement errors use the Anthropic shape: throttle = 429 `rate_limit_error` + Retry-After (SDKs back off natively); block = 403 `budget_exceeded`; kill = 403 `agent_disabled`.
+- Kill switch: /admin endpoints (constant-time admin-key check), in-memory effect is immediate and persisted in the kills table so restarts don't revive. Unknown agent names 404 (typo protection).
 
 Proxy implementation notes:
 - `httputil.ReverseProxy` with `Rewrite`; client headers pass through untouched **except credentials**: agents authenticate with their Tollgate key in `x-api-key` or `Authorization: Bearer`; when the provider has an `api_key` configured, that key is terminated at the proxy and the provider key is injected upstream (`x-api-key` set, `Authorization` stripped). Empty `agents:` list = open passthrough mode with a startup warning.
@@ -54,7 +60,7 @@ Proxy implementation notes:
 - **M1** ✅ (shipped 2026-07-05): transparent passthrough proxy to Anthropic; streaming included; per-request token usage logged to stdout.
 - **M2** ✅ (shipped 2026-07-05): agent identity via API keys + per-agent attribution; provider key injection.
 - **M3** ✅ (shipped 2026-07-05): SQLite metering + cost conversion (versioned pricing YAML) + `GET /usage`.
-- **M4**: budgets with enforcement — alert / throttle / block — + kill switch.
+- **M4** ✅ (shipped 2026-07-05): budgets with enforcement — alert / throttle / block — + kill switch.
 - **M5**: OpenAI-compatible endpoint support (covers vLLM and most agent frameworks).
 - **M6**: Helm chart + kind quickstart.
 - **After M6**: MCP tool-call policy, React dashboard.

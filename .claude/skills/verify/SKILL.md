@@ -52,7 +52,14 @@ agent→provider credential swap, not just passthrough.
    + 100 cache-write + 200 cache-read → $0.003216). Probe: unauthenticated
    /usage → 401; `group_by=password` and `since=whenever` → 400 JSON errors;
    restart the binary and confirm rows persist.
-5. Probes: client sends `Accept-Encoding: gzip` (body must stay readable,
+5. Budgets (M4+): set a tiny `limit_usd` (each mock JSON request costs
+   $0.000825) and fire a rapid loop — expect ~limit/0.000825 successes then
+   403 `budget_exceeded` (check the message shows the exact limit); throttle
+   action → 429 `rate_limit_error` + `Retry-After`, one 200 per interval;
+   kill via `POST /admin/agents/{name}/kill` (x-admin-key) → 403
+   `agent_disabled` on the next request, still killed after restart, revived
+   with DELETE. Admin probes: no/wrong key → 401, unknown agent → 404.
+6. Probes: client sends `Accept-Encoding: gzip` (body must stay readable,
    usage still parsed); upstream 4xx error body passes through verbatim with
    `usage=unknown` logged; unknown path passes through; killed upstream → 502
    with `error=` in the log.

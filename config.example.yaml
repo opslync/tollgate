@@ -3,6 +3,8 @@
 
 server:
   listen: ":8080"
+  # Enables the /admin kill-switch endpoints when set.
+  admin_key: "${TOLLGATE_ADMIN_KEY}"
 
 # SQLite database for usage/audit records (created if missing).
 storage:
@@ -26,3 +28,19 @@ agents:
     key: "tg_replace_with_openssl_rand_hex_16"
     team: support
     namespace: prod
+
+# Rolling-window spend limits per agent or team (windows: 30m, 24h, 7d).
+# alert_at (default 0.8) logs a warning at that fraction of the limit.
+# action at the limit: block (403) or throttle (429 + Retry-After, one
+# request allowed per throttle_interval). limit_tokens counts input+output.
+budgets:
+  - agent: support-bot
+    window: 24h
+    limit_usd: 10.00
+    action: block
+  - team: support
+    window: 7d
+    limit_usd: 100.00
+    alert_at: 0.75
+    action: throttle
+    throttle_interval: 60s
