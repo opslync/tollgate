@@ -29,6 +29,10 @@ tokens → deltas, 150ms apart, flushed → `message_delta` with final
 `output_tokens` → `message_stop`). Honor `Accept-Encoding: gzip` on the JSON
 path to exercise Tollgate's gzip transparency.
 
+The mock should only accept the exact provider key (e.g.
+`sk-ant-real-provider-key`) — then a 200 through Tollgate proves the
+agent→provider credential swap, not just passthrough.
+
 ## Flows worth driving
 
 1. Non-streaming: response byte-identical (headers like `request-id` too);
@@ -37,7 +41,12 @@ path to exercise Tollgate's gzip transparency.
 2. Streaming (`curl -sN`, timestamp lines): events must arrive incrementally
    at the upstream's cadence, not in one burst; final log has `stream=true`
    and output tokens from `message_delta`, not `message_start`.
-3. Probes: client sends `Accept-Encoding: gzip` (body must stay readable,
+3. Auth (M2+): agent key accepted via both `x-api-key` and
+   `Authorization: Bearer`; log line carries `agent= team= namespace=`;
+   unknown/missing key → 401 with Anthropic-shaped error body and **zero
+   upstream requests** (count mock log lines before/after); `/healthz` stays
+   unauthenticated; config without `agents:` starts in open mode with a WARN.
+4. Probes: client sends `Accept-Encoding: gzip` (body must stay readable,
    usage still parsed); upstream 4xx error body passes through verbatim with
    `usage=unknown` logged; unknown path passes through; killed upstream → 502
    with `error=` in the log.

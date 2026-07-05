@@ -20,30 +20,35 @@ Cost governance is the wedge; MCP tool-call policy (allow-lists, deny-by-default
 
 ## Status
 
-Early development. Current milestone: **M1 — transparent passthrough proxy** to the Anthropic API with per-request token usage logged to stdout.
+Early development. Milestones 1–2 shipped: transparent passthrough proxy (streaming included) with per-request token usage, and per-agent identity via API keys. Next up: SQLite metering + cost conversion.
 
 ## Quickstart
 
 ```sh
 make build
-cp config.example.yaml config.yaml
+cp config.example.yaml config.yaml   # add your provider key + agent keys
 ./bin/tollgate --config config.yaml
 ```
 
-Point your agent at Tollgate instead of the provider:
+Point your agent at Tollgate instead of the provider, using its Tollgate agent key in place of the provider key:
 
 ```sh
 export ANTHROPIC_BASE_URL=http://localhost:8080
+export ANTHROPIC_API_KEY=tg_your_agent_key   # terminated at Tollgate, never sent upstream
 ```
 
-Every request through the proxy produces a structured log line with model, status, latency, and parsed token counts.
+Tollgate authenticates the agent, swaps in the real provider key upstream, and every request produces a structured log line with agent, team, namespace, model, status, latency, and parsed token counts:
+
+```
+msg=request provider=anthropic path=/v1/messages status=200 agent=support-bot team=support namespace=prod model=claude-sonnet-5 stream=false input_tokens=25 output_tokens=50
+```
 
 ## Roadmap
 
 | Milestone | Scope |
 |---|---|
-| 1 | Transparent passthrough proxy (Anthropic, streaming included), token usage logged |
-| 2 | Agent identity via API keys, per-agent attribution |
+| 1 ✅ | Transparent passthrough proxy (Anthropic, streaming included), token usage logged |
+| 2 ✅ | Agent identity via API keys, per-agent attribution |
 | 3 | SQLite metering, cost conversion via versioned pricing table, `GET /usage` |
 | 4 | Budgets with enforcement — alert / throttle / block — and kill switch |
 | 5 | OpenAI-compatible endpoint support (vLLM and most agent frameworks) |

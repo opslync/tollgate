@@ -26,15 +26,16 @@ Cost governance is the wedge; MCP tool-call security policy (allow-lists, deny-b
 
 ```
 cmd/tollgate/      — entrypoint: flags, config load, server lifecycle
-internal/config/   — YAML config load + validation
-internal/proxy/    — reverse proxy, streaming passthrough, request logging
+internal/config/   — YAML config load + validation (agents, providers, env expansion)
+internal/auth/     — agent-key authentication middleware, agent identity in context
+internal/proxy/    — reverse proxy, streaming passthrough, key injection, request logging
 internal/meter/    — provider response parsing → token usage
 ```
 
-Later milestones add `internal/auth` (M2), `internal/store` (M3), `internal/budget` (M4), `pricing/pricing.yaml` (M3), `deploy/helm` (M6). Don't create directories before their milestone.
+Later milestones add `internal/store` (M3), `internal/budget` (M4), `pricing/pricing.yaml` (M3), `deploy/helm` (M6). Don't create directories before their milestone.
 
 Proxy implementation notes:
-- `httputil.ReverseProxy` with `Rewrite`; client headers (incl. `x-api-key`) pass through untouched.
+- `httputil.ReverseProxy` with `Rewrite`; client headers pass through untouched **except credentials**: agents authenticate with their Tollgate key in `x-api-key` or `Authorization: Bearer`; when the provider has an `api_key` configured, that key is terminated at the proxy and the provider key is injected upstream (`x-api-key` set, `Authorization` stripped). Empty `agents:` list = open passthrough mode with a startup warning.
 - `Accept-Encoding` is stripped outbound so Go's transport handles gzip transparently and the meter always sees plaintext.
 - `FlushInterval: -1` for immediate SSE flush.
 - Usage is parsed by a tee reader wrapped around the response body in `ModifyResponse`; one structured `slog` line per request when the body completes. Parse failures never break the proxy.
@@ -42,8 +43,8 @@ Proxy implementation notes:
 
 ## Roadmap
 
-- **M1** (done first): transparent passthrough proxy to Anthropic. Agent points base URL at Tollgate; requests forward untouched (streaming included); each request logged to stdout with parsed token usage. No auth, budgets, or storage.
-- **M2**: agent identity via API keys + per-agent attribution.
+- **M1** ✅ (shipped 2026-07-05): transparent passthrough proxy to Anthropic; streaming included; per-request token usage logged to stdout.
+- **M2** ✅ (shipped 2026-07-05): agent identity via API keys + per-agent attribution; provider key injection.
 - **M3**: SQLite metering + cost conversion (versioned pricing YAML) + `GET /usage`.
 - **M4**: budgets with enforcement — alert / throttle / block — + kill switch.
 - **M5**: OpenAI-compatible endpoint support (covers vLLM and most agent frameworks).
