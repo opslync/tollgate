@@ -1,5 +1,9 @@
 # Tollgate
 
+[![CI](https://github.com/opslync/tollgate/actions/workflows/ci.yml/badge.svg)](https://github.com/opslync/tollgate/actions/workflows/ci.yml)
+[![License](https://img.shields.io/badge/license-Apache--2.0-blue.svg)](LICENSE)
+[![Image](https://img.shields.io/badge/ghcr.io-opslync%2Ftollgate-blue)](https://github.com/opslync/tollgate/pkgs/container/tollgate)
+
 **AI runtime governance for Kubernetes.** See, budget, and control every token and tool call your AI agents make — inside your own cluster.
 
 Tollgate is a proxy + control plane that platform and FinOps teams install in their own Kubernetes cluster. AI agents route their outbound LLM API traffic (Anthropic and OpenAI-compatible endpoints, including vLLM) through it by changing one setting: the API base URL.
