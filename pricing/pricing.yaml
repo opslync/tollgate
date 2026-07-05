@@ -1,0 +1,53 @@
+# Tollgate pricing table — versioned; we maintain this file.
+# Rates are USD per million tokens, from platform.claude.com pricing
+# (cache write = 1.25x input for the default 5-minute TTL; cache read = 0.1x input).
+# Model IDs match by exact name first, then longest dash-boundary prefix, so
+# dated IDs like claude-haiku-4-5-20251001 resolve to claude-haiku-4-5.
+version: "2026-07-05"
+models:
+  claude-fable-5:
+    input_per_mtok: 10.00
+    output_per_mtok: 50.00
+    cache_write_per_mtok: 12.50
+    cache_read_per_mtok: 1.00
+  claude-opus-4-8:
+    input_per_mtok: 5.00
+    output_per_mtok: 25.00
+    cache_write_per_mtok: 6.25
+    cache_read_per_mtok: 0.50
+  claude-opus-4-7:
+    input_per_mtok: 5.00
+    output_per_mtok: 25.00
+    cache_write_per_mtok: 6.25
+    cache_read_per_mtok: 0.50
+  claude-opus-4-6:
+    input_per_mtok: 5.00
+    output_per_mtok: 25.00
+    cache_write_per_mtok: 6.25
+    cache_read_per_mtok: 0.50
+  claude-opus-4-5:
+    input_per_mtok: 5.00
+    output_per_mtok: 25.00
+    cache_write_per_mtok: 6.25
+    cache_read_per_mtok: 0.50
+  # List price; an introductory $2/$10 per MTok applies through 2026-08-31.
+  claude-sonnet-5:
+    input_per_mtok: 3.00
+    output_per_mtok: 15.00
+    cache_write_per_mtok: 3.75
+    cache_read_per_mtok: 0.30
+  claude-sonnet-4-6:
+    input_per_mtok: 3.00
+    output_per_mtok: 15.00
+    cache_write_per_mtok: 3.75
+    cache_read_per_mtok: 0.30
+  claude-sonnet-4-5:
+    input_per_mtok: 3.00
+    output_per_mtok: 15.00
+    cache_write_per_mtok: 3.75
+    cache_read_per_mtok: 0.30
+  claude-haiku-4-5:
+    input_per_mtok: 1.00
+    output_per_mtok: 5.00
+    cache_write_per_mtok: 1.25
+    cache_read_per_mtok: 0.10
