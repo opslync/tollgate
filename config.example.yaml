@@ -4,7 +4,21 @@
 server:
   listen: ":8080"
 
-# Upstream LLM providers. Milestone 1 routes all traffic to the first entry.
+# Upstream LLM providers. Milestone scope: all traffic routes to the first entry.
+# api_key (optional): the real provider key, injected upstream in place of the
+# agent's Tollgate key. Supports ${ENV_VAR} references. When omitted, the
+# caller's own credentials pass through unchanged.
 providers:
   - name: anthropic
     base_url: "https://api.anthropic.com"
+    api_key: "${ANTHROPIC_API_KEY}"
+
+# Agents authenticate with their Tollgate key (min 16 chars — generate with
+# e.g. `openssl rand -hex 16`) sent in the header their SDK already uses:
+# x-api-key or Authorization: Bearer. Usage is attributed to name/team/namespace.
+# WARNING: an empty agents list disables authentication (open passthrough mode).
+agents:
+  - name: support-bot
+    key: "tg_replace_with_openssl_rand_hex_16"
+    team: support
+    namespace: prod

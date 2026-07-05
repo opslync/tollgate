@@ -35,6 +35,47 @@ providers:
 	}
 }
 
+func TestLoadAgentsAndProviderKey(t *testing.T) {
+	t.Setenv("TEST_UPSTREAM_KEY", "sk-ant-real-key")
+	cfg, err := Load(writeConfig(t, `
+server:
+  listen: ":8080"
+providers:
+  - name: anthropic
+    base_url: "https://api.anthropic.com"
+    api_key: "${TEST_UPSTREAM_KEY}"
+agents:
+  - name: support-bot
+    key: "tg_support_0123456789abcdef"
+    team: support
+    namespace: prod
+`))
+	if err != nil {
+		t.Fatalf("Load: %v", err)
+	}
+	if got := cfg.Providers[0].APIKey; got != "sk-ant-real-key" {
+		t.Errorf("api_key = %q, want expanded env value", got)
+	}
+	a := cfg.Agents[0]
+	if a.Name != "support-bot" || a.Team != "support" || a.Namespace != "prod" {
+		t.Errorf("agent = %+v", a)
+	}
+}
+
+func TestLoadUnsetEnvKey(t *testing.T) {
+	_, err := Load(writeConfig(t, `
+server:
+  listen: ":8080"
+providers:
+  - name: anthropic
+    base_url: "https://api.anthropic.com"
+    api_key: "${TOLLGATE_TEST_DEFINITELY_UNSET}"
+`))
+	if err == nil || !strings.Contains(err.Error(), "unset environment variable") {
+		t.Fatalf("err = %v, want unset env var error", err)
+	}
+}
+
 func TestLoadMissingFile(t *testing.T) {
 	if _, err := Load(filepath.Join(t.TempDir(), "nope.yaml")); err == nil {
 		t.Fatal("expected error for missing file")
@@ -73,6 +114,26 @@ func TestLoadErrors(t *testing.T) {
 		{
 			"duplicate provider name",
 			"server:\n  listen: \":8080\"\nproviders:\n  - name: a\n    base_url: \"https://x\"\n  - name: a\n    base_url: \"https://y\"\n",
+			"duplicate name",
+		},
+		{
+			"agent without name",
+			"server:\n  listen: \":8080\"\nproviders:\n  - name: a\n    base_url: \"https://x\"\nagents:\n  - key: \"0123456789abcdef\"\n",
+			"name must be set",
+		},
+		{
+			"agent key too short",
+			"server:\n  listen: \":8080\"\nproviders:\n  - name: a\n    base_url: \"https://x\"\nagents:\n  - name: bot\n    key: \"short\"\n",
+			"at least 16 characters",
+		},
+		{
+			"duplicate agent key",
+			"server:\n  listen: \":8080\"\nproviders:\n  - name: a\n    base_url: \"https://x\"\nagents:\n  - name: bot1\n    key: \"0123456789abcdef\"\n  - name: bot2\n    key: \"0123456789abcdef\"\n",
+			"key already used",
+		},
+		{
+			"duplicate agent name",
+			"server:\n  listen: \":8080\"\nproviders:\n  - name: a\n    base_url: \"https://x\"\nagents:\n  - name: bot\n    key: \"0123456789abcdef\"\n  - name: bot\n    key: \"fedcba9876543210\"\n",
 			"duplicate name",
 		},
 	}
