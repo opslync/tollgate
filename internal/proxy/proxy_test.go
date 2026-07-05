@@ -309,6 +309,52 @@ func TestAttributionLogged(t *testing.T) {
 	}
 }
 
+func TestRecorderReceivesCompletedRequest(t *testing.T) {
+	upstream := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		io.WriteString(w, `{"model":"claude-sonnet-5","usage":{"input_tokens":25,"output_tokens":50}}`)
+	}))
+	defer upstream.Close()
+
+	u, _ := url.Parse(upstream.URL)
+	logger := slog.New(slog.NewTextHandler(io.Discard, nil))
+	p := New("test", u, "sk-real", logger)
+
+	recorded := make(chan RequestRecord, 1)
+	p.SetRecorder(func(rec RequestRecord) { recorded <- rec })
+
+	authn := auth.New([]config.Agent{
+		{Name: "support-bot", Key: "tg_agent_key_0123456789abcdef", Team: "support", Namespace: "prod"},
+	})
+	srv := httptest.NewServer(authn.Middleware(p))
+	defer srv.Close()
+
+	req, _ := http.NewRequest(http.MethodPost, srv.URL+"/v1/messages", strings.NewReader(`{}`))
+	req.Header.Set("x-api-key", "tg_agent_key_0123456789abcdef")
+	resp, err := http.DefaultClient.Do(req)
+	if err != nil {
+		t.Fatal(err)
+	}
+	io.Copy(io.Discard, resp.Body)
+	resp.Body.Close()
+
+	select {
+	case rec := <-recorded:
+		if rec.Agent.Name != "support-bot" || rec.Agent.Team != "support" {
+			t.Errorf("agent = %+v", rec.Agent)
+		}
+		if !rec.UsageOK || rec.Model != "claude-sonnet-5" ||
+			rec.Usage.InputTokens != 25 || rec.Usage.OutputTokens != 50 {
+			t.Errorf("usage = %+v ok=%v model=%q", rec.Usage, rec.UsageOK, rec.Model)
+		}
+		if rec.Status != 200 || rec.Provider != "test" || rec.Path != "/v1/messages" {
+			t.Errorf("record = %+v", rec)
+		}
+	case <-time.After(2 * time.Second):
+		t.Fatal("recorder was never called")
+	}
+}
+
 func TestUpstreamUnreachable(t *testing.T) {
 	// A closed port: reserve one with a listener, then shut it down.
 	dead := httptest.NewServer(http.NotFoundHandler())

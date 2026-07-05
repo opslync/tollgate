@@ -4,6 +4,10 @@
 server:
   listen: ":8080"
 
+# SQLite database for usage/audit records (created if missing).
+storage:
+  path: "tollgate.db"
+
 # Upstream LLM providers. Milestone scope: all traffic routes to the first entry.
 # api_key (optional): the real provider key, injected upstream in place of the
 # agent's Tollgate key. Supports ${ENV_VAR} references. When omitted, the

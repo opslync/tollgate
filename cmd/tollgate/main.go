@@ -15,9 +15,12 @@ import (
 	"syscall"
 	"time"
 
+	"github.com/opslync/tollgate/internal/api"
 	"github.com/opslync/tollgate/internal/auth"
 	"github.com/opslync/tollgate/internal/config"
 	"github.com/opslync/tollgate/internal/proxy"
+	"github.com/opslync/tollgate/internal/store"
+	"github.com/opslync/tollgate/pricing"
 )
 
 func main() {
@@ -49,18 +52,55 @@ func run() error {
 		return err
 	}
 
+	prices, err := pricing.Load()
+	if err != nil {
+		return err
+	}
+	st, err := store.Open(cfg.Storage.Path)
+	if err != nil {
+		return fmt.Errorf("open storage: %w", err)
+	}
+	defer st.Close()
+	logger.Info("usage storage ready", "path", cfg.Storage.Path, "pricing_version", prices.Version)
+
+	p := proxy.New(provider.Name, upstream, provider.APIKey, logger)
+	p.SetRecorder(func(rec proxy.RequestRecord) {
+		record := store.Record{
+			Time: rec.Time, Agent: rec.Agent.Name, Team: rec.Agent.Team,
+			Namespace: rec.Agent.Namespace, Provider: rec.Provider,
+			Model: rec.Model, Method: rec.Method, Path: rec.Path,
+			Status: rec.Status, DurationMS: rec.DurationMS, Stream: rec.Stream,
+			Usage: rec.Usage,
+		}
+		if rec.UsageOK {
+			cost, priced := prices.Cost(rec.Model, rec.Usage)
+			record.CostUSD = cost
+			if !priced {
+				logger.Warn("model missing from pricing table, cost recorded as 0", "model", rec.Model)
+			}
+		}
+		ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+		defer cancel()
+		if err := st.Insert(ctx, record); err != nil {
+			logger.Error("failed to persist usage record", "error", err)
+		}
+	})
+
+	authn := auth.New(cfg.Agents)
+	wrap := func(h http.Handler) http.Handler { return h }
+	if len(cfg.Agents) > 0 {
+		wrap = authn.Middleware
+	} else {
+		logger.Warn("no agents configured: authentication disabled, requests pass through unattributed")
+	}
+
 	mux := http.NewServeMux()
 	mux.HandleFunc("GET /healthz", func(w http.ResponseWriter, r *http.Request) {
 		w.WriteHeader(http.StatusOK)
 		fmt.Fprintln(w, "ok")
 	})
-	var proxyHandler http.Handler = proxy.New(provider.Name, upstream, provider.APIKey, logger)
-	if len(cfg.Agents) > 0 {
-		proxyHandler = auth.New(cfg.Agents).Middleware(proxyHandler)
-	} else {
-		logger.Warn("no agents configured: authentication disabled, requests pass through unattributed")
-	}
-	mux.Handle("/", proxyHandler)
+	mux.Handle("GET /usage", wrap(api.UsageHandler(st)))
+	mux.Handle("/", wrap(p))
 
 	srv := &http.Server{
 		Addr:              cfg.Server.Listen,

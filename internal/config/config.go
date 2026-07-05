@@ -11,12 +11,18 @@ import (
 
 type Config struct {
 	Server    Server     `yaml:"server"`
+	Storage   Storage    `yaml:"storage"`
 	Providers []Provider `yaml:"providers"`
 	Agents    []Agent    `yaml:"agents"`
 }
 
 type Server struct {
 	Listen string `yaml:"listen"`
+}
+
+type Storage struct {
+	// Path to the SQLite database file; defaults to tollgate.db.
+	Path string `yaml:"path"`
 }
 
 type Provider struct {
@@ -54,6 +60,9 @@ func Load(path string) (*Config, error) {
 	var cfg Config
 	if err := dec.Decode(&cfg); err != nil {
 		return nil, fmt.Errorf("parse %s: %w", path, err)
+	}
+	if cfg.Storage.Path == "" {
+		cfg.Storage.Path = "tollgate.db"
 	}
 	if err := cfg.expandEnv(); err != nil {
 		return nil, fmt.Errorf("invalid config %s: %w", path, err)

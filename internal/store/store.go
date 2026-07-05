@@ -6,6 +6,7 @@ package store
 import (
 	"context"
 	"database/sql"
+	"errors"
 	"fmt"
 	"net/url"
 	"time"
@@ -107,6 +108,9 @@ var groupByColumns = map[string]string{
 	"provider":  "provider",
 }
 
+// ErrInvalidGroupBy marks a caller-supplied group_by outside the allowlist.
+var ErrInvalidGroupBy = errors.New("invalid group_by")
+
 type AggregateOptions struct {
 	GroupBy string // one of groupByColumns; default "agent"
 	Since   time.Time
@@ -131,7 +135,7 @@ func (s *Store) Aggregate(ctx context.Context, opts AggregateOptions) ([]Row, er
 	}
 	col, ok := groupByColumns[opts.GroupBy]
 	if !ok {
-		return nil, fmt.Errorf("invalid group_by %q", opts.GroupBy)
+		return nil, fmt.Errorf("%w %q", ErrInvalidGroupBy, opts.GroupBy)
 	}
 
 	query := `

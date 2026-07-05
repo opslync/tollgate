@@ -21,7 +21,32 @@ type Proxy struct {
 	rp       *httputil.ReverseProxy
 	logger   *slog.Logger
 	provider string
+	recorder Recorder
 }
+
+// RequestRecord is everything observed about one completed request, handed
+// to the Recorder after the response body has streamed to the client.
+type RequestRecord struct {
+	Time       time.Time
+	Agent      auth.Agent
+	Provider   string
+	Method     string
+	Path       string
+	Model      string
+	Status     int
+	DurationMS int64
+	Stream     bool
+	Usage      meter.Usage
+	UsageOK    bool
+}
+
+// Recorder receives completed requests (e.g. to persist them). It runs on
+// the request goroutine after the response finished, so it must not block
+// for long.
+type Recorder func(RequestRecord)
+
+// SetRecorder installs the recorder; call before serving traffic.
+func (p *Proxy) SetRecorder(r Recorder) { p.recorder = r }
 
 // reqState carries per-request observations from the ReverseProxy callbacks
 // out to the log line written when the request completes.
@@ -108,6 +133,26 @@ func (p *Proxy) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 
 	p.rp.ServeHTTP(w, r)
 
+	rec := RequestRecord{
+		Time:       start,
+		Provider:   p.provider,
+		Method:     r.Method,
+		Path:       r.URL.Path,
+		Status:     state.status,
+		DurationMS: time.Since(start).Milliseconds(),
+		Stream:     state.stream,
+	}
+	if agent, ok := auth.FromContext(r.Context()); ok {
+		rec.Agent = agent
+	}
+	if state.parser != nil {
+		rec.Usage, rec.UsageOK = state.parser.Finish()
+		rec.Model = rec.Usage.Model
+	}
+	if p.recorder != nil {
+		p.recorder(rec)
+	}
+
 	attrs := []any{
 		"provider", p.provider,
 		"method", r.Method,
@@ -127,17 +172,15 @@ func (p *Proxy) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	if state.err != nil {
 		attrs = append(attrs, "error", state.err.Error())
 	}
-	// ReverseProxy has finished copying (and closed) the body by the time
-	// ServeHTTP returns, so the parser has seen the complete response.
 	if state.parser != nil {
-		if u, ok := state.parser.Finish(); ok {
+		if rec.UsageOK {
 			attrs = append(attrs,
-				"model", u.Model,
+				"model", rec.Usage.Model,
 				"stream", state.stream,
-				"input_tokens", u.InputTokens,
-				"output_tokens", u.OutputTokens,
-				"cache_creation_input_tokens", u.CacheCreationInputTokens,
-				"cache_read_input_tokens", u.CacheReadInputTokens,
+				"input_tokens", rec.Usage.InputTokens,
+				"output_tokens", rec.Usage.OutputTokens,
+				"cache_creation_input_tokens", rec.Usage.CacheCreationInputTokens,
+				"cache_read_input_tokens", rec.Usage.CacheReadInputTokens,
 			)
 		} else {
 			attrs = append(attrs, "usage", "unknown")
