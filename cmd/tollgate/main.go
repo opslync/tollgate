@@ -17,6 +17,7 @@ import (
 
 	"github.com/opslync/tollgate/internal/api"
 	"github.com/opslync/tollgate/internal/auth"
+	"github.com/opslync/tollgate/internal/budget"
 	"github.com/opslync/tollgate/internal/config"
 	"github.com/opslync/tollgate/internal/proxy"
 	"github.com/opslync/tollgate/internal/store"
@@ -63,6 +64,12 @@ func run() error {
 	defer st.Close()
 	logger.Info("usage storage ready", "path", cfg.Storage.Path, "pricing_version", prices.Version)
 
+	engine := budget.New(st, cfg.Budgets, logger)
+	if err := engine.LoadKills(context.Background()); err != nil {
+		return err
+	}
+	logger.Info("budget enforcement ready", "budgets", len(cfg.Budgets))
+
 	p := proxy.New(provider.Name, upstream, provider.APIKey, logger)
 	p.SetRecorder(func(rec proxy.RequestRecord) {
 		record := store.Record{
@@ -84,6 +91,7 @@ func run() error {
 		if err := st.Insert(ctx, record); err != nil {
 			logger.Error("failed to persist usage record", "error", err)
 		}
+		engine.Record(rec.Agent, rec.Usage.InputTokens+rec.Usage.OutputTokens, record.CostUSD)
 	})
 
 	authn := auth.New(cfg.Agents)
@@ -100,7 +108,18 @@ func run() error {
 		fmt.Fprintln(w, "ok")
 	})
 	mux.Handle("GET /usage", wrap(api.UsageHandler(st)))
-	mux.Handle("/", wrap(p))
+	mux.Handle("/", wrap(engine.Middleware(p)))
+
+	if cfg.Server.AdminKey != "" {
+		agentNames := make([]string, len(cfg.Agents))
+		for i, a := range cfg.Agents {
+			agentNames[i] = a.Name
+		}
+		mux.Handle("/admin/", api.Admin(engine, cfg.Server.AdminKey, agentNames))
+		logger.Info("admin endpoints enabled")
+	} else {
+		logger.Info("admin endpoints disabled (server.admin_key not set)")
+	}
 
 	srv := &http.Server{
 		Addr:              cfg.Server.Listen,
