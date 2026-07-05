@@ -1,0 +1,18 @@
+version: "2"
+
+linters:
+  settings:
+    errcheck:
+      # Closes on read paths where the error carries no signal the caller
+      # could act on. Write-path errors must still be checked.
+      exclude-functions:
+        - (*os.File).Close
+        - (*database/sql.Rows).Close
+        - (*database/sql.DB).Close
+  exclusions:
+    rules:
+      # Tests deliberately ignore errors that cannot affect assertions
+      # (fixture writes, response draining, teardown closes).
+      - path: _test\.go
+        linters:
+          - errcheck
