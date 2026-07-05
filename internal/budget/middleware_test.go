@@ -6,6 +6,7 @@ import (
 	"io"
 	"net/http"
 	"net/http/httptest"
+	"strings"
 	"testing"
 
 	"github.com/opslync/tollgate/internal/auth"
@@ -65,6 +66,19 @@ func TestMiddlewareBlocks(t *testing.T) {
 	}
 	if errType(body) != "budget_exceeded" {
 		t.Errorf("error type = %q, body = %v", errType(body), body)
+	}
+}
+
+func TestMiddlewareBlockMessageKeepsSmallLimitsExact(t *testing.T) {
+	e, _, _ := newTestEngine(t, []config.Budget{usdBudget("support-bot", 0.005, "block")})
+	prime(t, e, supportBot)
+	e.Record(supportBot, 0, 0.01)
+
+	_, body := doReq(t, middlewareServer(t, e))
+	errObj, _ := body["error"].(map[string]any)
+	msg, _ := errObj["message"].(string)
+	if !strings.Contains(msg, "$0.005 limit") {
+		t.Errorf("message must show the exact limit, got: %s", msg)
 	}
 }
 

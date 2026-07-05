@@ -53,7 +53,8 @@ func describeBudget(d Decision) string {
 	}
 	s := fmt.Sprintf("%s spent", target)
 	if b.LimitUSD > 0 {
-		s += fmt.Sprintf(" $%.4f of the $%.2f", d.SpendUSD, b.LimitUSD)
+		// %g keeps small limits exact ($0.005 must not render as $0.01).
+		s += fmt.Sprintf(" $%.4f of the $%g", d.SpendUSD, b.LimitUSD)
 	} else {
 		s += fmt.Sprintf(" %d of the %d token", d.SpendTokens, b.LimitTokens)
 	}
