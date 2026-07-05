@@ -12,6 +12,9 @@ import (
 	"sync"
 	"testing"
 	"time"
+
+	"github.com/opslync/tollgate/internal/auth"
+	"github.com/opslync/tollgate/internal/config"
 )
 
 // logBuffer is a goroutine-safe sink for the proxy's slog output.
@@ -40,7 +43,7 @@ func newTestProxyLogged(t *testing.T, upstream string) (*httptest.Server, *logBu
 	}
 	logs := &logBuffer{}
 	logger := slog.New(slog.NewTextHandler(logs, nil))
-	srv := httptest.NewServer(New("test", u, logger))
+	srv := httptest.NewServer(New("test", u, "", logger))
 	t.Cleanup(srv.Close)
 	return srv, logs
 }
@@ -231,6 +234,78 @@ func TestUsageUnknownOnErrorBody(t *testing.T) {
 	got := waitForLog(t, logs)
 	if !strings.Contains(got, "usage=unknown") || !strings.Contains(got, "status=400") {
 		t.Errorf("log missing usage=unknown/status=400:\n%s", got)
+	}
+}
+
+// TestProviderKeyInjection covers the M2 credential swap: the agent's
+// Tollgate key is terminated at the proxy and the provider key goes upstream.
+func TestProviderKeyInjection(t *testing.T) {
+	var gotAPIKey, gotAuthz string
+	upstream := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		gotAPIKey = r.Header.Get("x-api-key")
+		gotAuthz = r.Header.Get("Authorization")
+		w.Header().Set("Content-Type", "application/json")
+		io.WriteString(w, `{"ok":true}`)
+	}))
+	defer upstream.Close()
+
+	u, _ := url.Parse(upstream.URL)
+	logger := slog.New(slog.NewTextHandler(io.Discard, nil))
+	srv := httptest.NewServer(New("test", u, "sk-ant-provider-key", logger))
+	defer srv.Close()
+
+	for _, header := range []string{"x-api-key", "Authorization"} {
+		req, _ := http.NewRequest(http.MethodPost, srv.URL+"/v1/messages", strings.NewReader(`{}`))
+		if header == "x-api-key" {
+			req.Header.Set("x-api-key", "tg_agent_key_0123456789abcdef")
+		} else {
+			req.Header.Set("Authorization", "Bearer tg_agent_key_0123456789abcdef")
+		}
+		resp, err := http.DefaultClient.Do(req)
+		if err != nil {
+			t.Fatal(err)
+		}
+		resp.Body.Close()
+
+		if gotAPIKey != "sk-ant-provider-key" {
+			t.Errorf("agent key via %s: upstream x-api-key = %q, want provider key", header, gotAPIKey)
+		}
+		if gotAuthz != "" {
+			t.Errorf("agent key via %s: Authorization leaked upstream: %q", header, gotAuthz)
+		}
+	}
+}
+
+func TestAttributionLogged(t *testing.T) {
+	upstream := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		io.WriteString(w, `{"ok":true}`)
+	}))
+	defer upstream.Close()
+
+	u, _ := url.Parse(upstream.URL)
+	logs := &logBuffer{}
+	logger := slog.New(slog.NewTextHandler(logs, nil))
+	authn := auth.New([]config.Agent{
+		{Name: "support-bot", Key: "tg_agent_key_0123456789abcdef", Team: "support", Namespace: "prod"},
+	})
+	srv := httptest.NewServer(authn.Middleware(New("test", u, "sk-real", logger)))
+	defer srv.Close()
+
+	req, _ := http.NewRequest(http.MethodPost, srv.URL+"/v1/messages", strings.NewReader(`{}`))
+	req.Header.Set("x-api-key", "tg_agent_key_0123456789abcdef")
+	resp, err := http.DefaultClient.Do(req)
+	if err != nil {
+		t.Fatal(err)
+	}
+	io.Copy(io.Discard, resp.Body)
+	resp.Body.Close()
+
+	got := waitForLog(t, logs)
+	for _, want := range []string{"agent=support-bot", "team=support", "namespace=prod"} {
+		if !strings.Contains(got, want) {
+			t.Errorf("log missing %q:\n%s", want, got)
+		}
 	}
 }
 

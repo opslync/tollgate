@@ -13,6 +13,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/opslync/tollgate/internal/auth"
 	"github.com/opslync/tollgate/internal/meter"
 )
 
@@ -33,7 +34,10 @@ type reqState struct {
 
 type ctxKey struct{}
 
-func New(provider string, upstream *url.URL, logger *slog.Logger) *Proxy {
+// New builds a proxy for one upstream provider. When apiKey is non-empty the
+// caller's credentials (their Tollgate agent key) are terminated here and the
+// provider key is injected upstream; when empty, credentials pass through.
+func New(provider string, upstream *url.URL, apiKey string, logger *slog.Logger) *Proxy {
 	p := &Proxy{logger: logger, provider: provider}
 	p.rp = &httputil.ReverseProxy{
 		Rewrite: func(pr *httputil.ProxyRequest) {
@@ -41,6 +45,12 @@ func New(provider string, upstream *url.URL, logger *slog.Logger) *Proxy {
 			// Let our transport negotiate gzip and decompress transparently,
 			// so the usage parser always sees plaintext.
 			pr.Out.Header.Del("Accept-Encoding")
+			if apiKey != "" {
+				pr.Out.Header.Set("x-api-key", apiKey)
+				// The agent key must not leak upstream, whichever header
+				// it arrived in.
+				pr.Out.Header.Del("Authorization")
+			}
 		},
 		// Flush immediately: SSE events must reach the agent as they arrive.
 		FlushInterval:  -1,
@@ -104,6 +114,15 @@ func (p *Proxy) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		"path", r.URL.Path,
 		"status", state.status,
 		"duration_ms", time.Since(start).Milliseconds(),
+	}
+	if agent, ok := auth.FromContext(r.Context()); ok {
+		attrs = append(attrs, "agent", agent.Name)
+		if agent.Team != "" {
+			attrs = append(attrs, "team", agent.Team)
+		}
+		if agent.Namespace != "" {
+			attrs = append(attrs, "namespace", agent.Namespace)
+		}
 	}
 	if state.err != nil {
 		attrs = append(attrs, "error", state.err.Error())

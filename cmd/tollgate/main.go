@@ -15,6 +15,7 @@ import (
 	"syscall"
 	"time"
 
+	"github.com/opslync/tollgate/internal/auth"
 	"github.com/opslync/tollgate/internal/config"
 	"github.com/opslync/tollgate/internal/proxy"
 )
@@ -53,7 +54,13 @@ func run() error {
 		w.WriteHeader(http.StatusOK)
 		fmt.Fprintln(w, "ok")
 	})
-	mux.Handle("/", proxy.New(provider.Name, upstream, logger))
+	var proxyHandler http.Handler = proxy.New(provider.Name, upstream, provider.APIKey, logger)
+	if len(cfg.Agents) > 0 {
+		proxyHandler = auth.New(cfg.Agents).Middleware(proxyHandler)
+	} else {
+		logger.Warn("no agents configured: authentication disabled, requests pass through unattributed")
+	}
+	mux.Handle("/", proxyHandler)
 
 	srv := &http.Server{
 		Addr:              cfg.Server.Listen,
