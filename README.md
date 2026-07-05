@@ -2,7 +2,9 @@
 
 **AI runtime governance for Kubernetes.** See, budget, and control every token and tool call your AI agents make — inside your own cluster.
 
-Tollgate is a proxy + control plane that platform and FinOps teams install in their own Kubernetes cluster. AI agents route their outbound LLM API traffic (Anthropic today; OpenAI-compatible endpoints including vLLM on the roadmap) through it by changing one setting: the API base URL.
+Tollgate is a proxy + control plane that platform and FinOps teams install in their own Kubernetes cluster. AI agents route their outbound LLM API traffic (Anthropic and OpenAI-compatible endpoints, including vLLM) through it by changing one setting: the API base URL.
+
+See [ARCHITECTURE.md](ARCHITECTURE.md) for how requests flow through Tollgate and what each package does.
 
 ## What it does
 
@@ -15,7 +17,7 @@ Cost governance is the wedge; MCP tool-call policy (allow-lists, deny-by-default
 ## Design principles
 
 - **Provider-transparent.** Agents just change their base URL. Requests are forwarded unmodified; responses (including streaming) are parsed for usage on the way through.
-- **Zero-dependency install.** Single static Go binary, SQLite storage, one YAML config file. Runs locally with nothing else; Helm chart for Kubernetes coming as a milestone.
+- **Zero-dependency install.** Single static Go binary, SQLite storage, one YAML config file. Runs locally with nothing else; a [Helm chart](deploy/helm/tollgate) packages it for Kubernetes.
 - **Open source.** Apache-2.0.
 
 ## Status
