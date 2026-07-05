@@ -64,7 +64,7 @@ Proxy implementation notes:
 - **M3** ✅ (shipped 2026-07-05): SQLite metering + cost conversion (versioned pricing YAML) + `GET /usage`.
 - **M4** ✅ (shipped 2026-07-05): budgets with enforcement — alert / throttle / block — + kill switch.
 - **M5** ✅ (shipped 2026-07-05): OpenAI-compatible endpoint support (covers vLLM and most agent frameworks).
-- **M6**: Helm chart + kind quickstart.
+- **M6** ✅ (shipped 2026-07-05): Helm chart + kind quickstart.
 - **After M6**: MCP tool-call policy, React dashboard.
 
 ## Working agreements

@@ -20,7 +20,7 @@ Cost governance is the wedge; MCP tool-call policy (allow-lists, deny-by-default
 
 ## Status
 
-Early development. Milestones 1–5 shipped: transparent passthrough proxy (streaming included), per-agent identity via API keys, SQLite metering with dollar-cost conversion + `GET /usage`, budgets with real-time enforcement + kill switch, and OpenAI-compatible endpoint support (vLLM and most agent frameworks). Next up: Helm chart + kind quickstart.
+All six roadmap milestones shipped: transparent passthrough proxy (streaming included), per-agent identity, SQLite metering with dollar costs + `GET /usage`, budgets with real-time enforcement + kill switch, OpenAI-compatible endpoints, and Helm/kind packaging. Next: MCP tool-call policy and the dashboard.
 
 ## Quickstart
 
@@ -142,7 +142,7 @@ In production, agents in the cluster point at `http://tollgate.<namespace>.svc:8
 | 3 ✅ | SQLite metering, cost conversion via versioned pricing table, `GET /usage` |
 | 4 ✅ | Budgets with enforcement — alert / throttle / block — and kill switch |
 | 5 ✅ | OpenAI-compatible endpoint support (vLLM and most agent frameworks) |
-| 6 | Helm chart + kind quickstart |
+| 6 ✅ | Helm chart + kind quickstart |
 | Later | MCP tool-call policy, web dashboard |
 
 ## License
