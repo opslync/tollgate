@@ -56,7 +56,7 @@ func run() error {
 	if err != nil {
 		return fmt.Errorf("open storage: %w", err)
 	}
-	defer st.Close()
+	defer func() { _ = st.Close() }()
 	logger.Info("usage storage ready", "path", cfg.Storage.Path, "pricing_version", prices.Version)
 
 	engine := budget.New(st, cfg.Budgets, logger)
