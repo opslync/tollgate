@@ -46,7 +46,13 @@ agent→provider credential swap, not just passthrough.
    unknown/missing key → 401 with Anthropic-shaped error body and **zero
    upstream requests** (count mock log lines before/after); `/healthz` stays
    unauthenticated; config without `agents:` starts in open mode with a WARN.
-4. Probes: client sends `Accept-Encoding: gzip` (body must stay readable,
+4. Metering (M3+): point `storage.path` at a scratch file; drive known token
+   counts and check `GET /usage` returns exact dollar math (mock's JSON
+   response = 25 in / 50 out on claude-sonnet-5 → $0.000825; SSE = 472/91
+   + 100 cache-write + 200 cache-read → $0.003216). Probe: unauthenticated
+   /usage → 401; `group_by=password` and `since=whenever` → 400 JSON errors;
+   restart the binary and confirm rows persist.
+5. Probes: client sends `Accept-Encoding: gzip` (body must stay readable,
    usage still parsed); upstream 4xx error body passes through verbatim with
    `usage=unknown` logged; unknown path passes through; killed upstream → 502
    with `error=` in the log.

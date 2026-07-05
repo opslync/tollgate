@@ -20,7 +20,7 @@ Cost governance is the wedge; MCP tool-call policy (allow-lists, deny-by-default
 
 ## Status
 
-Early development. Milestones 1–2 shipped: transparent passthrough proxy (streaming included) with per-request token usage, and per-agent identity via API keys. Next up: SQLite metering + cost conversion.
+Early development. Milestones 1–3 shipped: transparent passthrough proxy (streaming included), per-agent identity via API keys, and SQLite metering with dollar-cost conversion + a `GET /usage` API. Next up: budgets with real-time enforcement.
 
 ## Quickstart
 
@@ -43,13 +43,27 @@ Tollgate authenticates the agent, swaps in the real provider key upstream, and e
 msg=request provider=anthropic path=/v1/messages status=200 agent=support-bot team=support namespace=prod model=claude-sonnet-5 stream=false input_tokens=25 output_tokens=50
 ```
 
+Every request is also persisted to SQLite with its dollar cost (from the versioned [pricing table](pricing/pricing.yaml), fixed at request time). Ask who spent what:
+
+```sh
+curl "http://localhost:8080/usage?group_by=agent&since=24h" -H "x-api-key: $TOLLGATE_KEY"
+```
+
+```json
+{"group_by":"agent","rows":[
+  {"key":"support-bot","requests":3,"input_tokens":522,"output_tokens":191,"cost_usd":0.004866}
+]}
+```
+
+`group_by` accepts `agent`, `team`, `namespace`, `model`, or `provider`; `since`/`until` take durations (`24h`) or RFC3339 timestamps; `agent=`/`model=` filter.
+
 ## Roadmap
 
 | Milestone | Scope |
 |---|---|
 | 1 ✅ | Transparent passthrough proxy (Anthropic, streaming included), token usage logged |
 | 2 ✅ | Agent identity via API keys, per-agent attribution |
-| 3 | SQLite metering, cost conversion via versioned pricing table, `GET /usage` |
+| 3 ✅ | SQLite metering, cost conversion via versioned pricing table, `GET /usage` |
 | 4 | Budgets with enforcement — alert / throttle / block — and kill switch |
 | 5 | OpenAI-compatible endpoint support (vLLM and most agent frameworks) |
 | 6 | Helm chart + kind quickstart |
