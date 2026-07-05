@@ -29,3 +29,12 @@ jobs:
       - uses: golangci/golangci-lint-action@v6
         with:
           version: latest
+
+  chart:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: azure/setup-helm@v4
+      - run: helm lint deploy/helm/tollgate
+      - run: helm template ci deploy/helm/tollgate > /dev/null
+      - run: helm template ci deploy/helm/tollgate --set persistence.enabled=true --set existingSecret=keys > /dev/null

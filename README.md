@@ -93,6 +93,46 @@ providers:
 
 OpenAI SDK users set `OPENAI_BASE_URL=http://tollgate:8080/v1` and their Tollgate agent key as the API key. For streaming token counts, request `stream_options: {"include_usage": true}` (vLLM emits the usage chunk the same way).
 
+## Kubernetes (kind quickstart)
+
+Try the full in-cluster experience in ~2 minutes with [kind](https://kind.sigs.k8s.io/):
+
+```sh
+kind create cluster --name tollgate
+docker build -t tollgate:dev .
+kind load docker-image tollgate:dev --name tollgate
+
+kubectl create secret generic tollgate-keys \
+  --from-literal=ANTHROPIC_API_KEY=sk-ant-... \
+  --from-literal=TOLLGATE_ADMIN_KEY=$(openssl rand -hex 16)
+
+cat > my-values.yaml <<'EOF'
+image: {repository: tollgate, tag: dev}
+existingSecret: tollgate-keys
+config:
+  server: {listen: ":8080", admin_key: "${TOLLGATE_ADMIN_KEY}"}
+  storage: {path: "/data/tollgate.db"}
+  providers:
+    - name: anthropic
+      base_url: "https://api.anthropic.com"
+      api_key: "${ANTHROPIC_API_KEY}"
+  agents:
+    - {name: my-agent, key: "tg_change_me_0123456789abcdef", team: demo}
+  budgets:
+    - {agent: my-agent, window: 24h, limit_usd: 5.00, action: block}
+EOF
+
+helm install tollgate deploy/helm/tollgate -f my-values.yaml
+kubectl port-forward svc/tollgate 8080:8080 &
+
+export ANTHROPIC_BASE_URL=http://localhost:8080
+export ANTHROPIC_API_KEY=tg_change_me_0123456789abcdef
+# ... run your agent, then ask who spent what:
+curl "http://localhost:8080/usage" -H "x-api-key: $ANTHROPIC_API_KEY"
+```
+
+In production, agents in the cluster point at `http://tollgate.<namespace>.svc:8080` and the chart's `persistence.enabled=true` keeps usage history and kill-switch state across restarts.
+
 ## Roadmap
 
 | Milestone | Scope |

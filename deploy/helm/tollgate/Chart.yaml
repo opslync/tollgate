@@ -1,0 +1,9 @@
+apiVersion: v2
+name: tollgate
+description: AI runtime governance for Kubernetes — see, budget, and control every token and tool call your AI agents make inside your own cluster.
+type: application
+version: 0.1.0
+appVersion: "0.6.0"
+home: https://github.com/opslync/tollgate
+sources:
+  - https://github.com/opslync/tollgate

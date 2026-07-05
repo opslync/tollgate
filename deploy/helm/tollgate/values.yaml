@@ -1,0 +1,50 @@
+image:
+  repository: ghcr.io/opslync/tollgate
+  tag: latest
+  pullPolicy: IfNotPresent
+
+service:
+  type: ClusterIP
+  port: 8080
+
+# Name of an existing Secret whose keys become environment variables —
+# the target for ${ENV_VAR} references in config (ANTHROPIC_API_KEY,
+# TOLLGATE_ADMIN_KEY, ...). Create it before installing:
+#   kubectl create secret generic tollgate-keys \
+#     --from-literal=ANTHROPIC_API_KEY=sk-ant-... \
+#     --from-literal=TOLLGATE_ADMIN_KEY=$(openssl rand -hex 16)
+existingSecret: ""
+
+# SQLite persistence. Disabled = emptyDir: usage/audit data and kill-switch
+# state are lost when the pod moves. Enable for anything beyond a demo.
+persistence:
+  enabled: false
+  size: 1Gi
+  storageClass: ""
+
+# Rendered verbatim into the ConfigMap as config.yaml — the full Tollgate
+# configuration (see config.example.yaml in the repo).
+config:
+  server:
+    listen: ":8080"
+    # admin_key: "${TOLLGATE_ADMIN_KEY}"
+  storage:
+    path: "/data/tollgate.db"
+  providers:
+    - name: anthropic
+      base_url: "https://api.anthropic.com"
+      # api_key: "${ANTHROPIC_API_KEY}"
+  # WARNING: no agents = authentication disabled (open passthrough mode).
+  agents: []
+  budgets: []
+
+resources:
+  requests:
+    cpu: 50m
+    memory: 64Mi
+  limits:
+    memory: 256Mi
+
+nodeSelector: {}
+tolerations: []
+affinity: {}

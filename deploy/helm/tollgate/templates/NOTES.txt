@@ -1,0 +1,21 @@
+Tollgate is deployed.
+
+Point your agents at it from inside the cluster:
+
+  http://{{ include "tollgate.fullname" . }}.{{ .Release.Namespace }}.svc:{{ .Values.service.port }}
+
+Or from your machine:
+
+  kubectl -n {{ .Release.Namespace }} port-forward svc/{{ include "tollgate.fullname" . }} 8080:{{ .Values.service.port }}
+  export ANTHROPIC_BASE_URL=http://localhost:8080
+
+{{- if not .Values.config.agents }}
+
+WARNING: no agents configured — authentication is disabled and traffic is
+unattributed. Add agents (and budgets) under .Values.config.
+{{- end }}
+{{- if not .Values.persistence.enabled }}
+
+NOTE: persistence is disabled; usage history and kill-switch state are lost
+when the pod restarts. Set persistence.enabled=true for real deployments.
+{{- end }}
