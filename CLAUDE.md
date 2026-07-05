@@ -53,5 +53,6 @@ Proxy implementation notes:
 ## Working agreements
 
 - One milestone per session. Small commits. Tests land with each feature.
+- Progress is tracked in GitHub milestones + issues on `opslync/tollgate` (one tracking issue per milestone, M2–M6 = issues #1–#5). A milestone session ends by checking off its issue's scope list and closing the issue and milestone.
 - `make build` / `make test` / `make lint` must stay green; CI runs build, `go test -race`, and golangci-lint.
 - Maintainer background: DevOps engineer, 10 years EKS/Kubernetes, comfortable in Go.
