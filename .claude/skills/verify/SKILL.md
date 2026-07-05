@@ -59,7 +59,14 @@ agent→provider credential swap, not just passthrough.
    kill via `POST /admin/agents/{name}/kill` (x-admin-key) → 403
    `agent_disabled` on the next request, still killed after restart, revived
    with DELETE. Admin probes: no/wrong key → 401, unknown agent → 404.
-6. Probes: client sends `Accept-Encoding: gzip` (body must stay readable,
+6. OpenAI provider (M5+): add a `type: openai` provider; the mock's
+   `/v1/chat/completions` validates `Authorization: Bearer sk-openai-real-key`
+   and answers gpt-5-shaped JSON (prompt 57 incl. 32 cached, completion 17 →
+   $0.00020525) or an SSE stream with usage in the final chunk + `[DONE]`.
+   Check: agent key sent as Bearer, log shows input_tokens=25 (57−32) and
+   cache_read=32; one budget blocks BOTH provider paths once exceeded;
+   `group_by=provider` splits costs.
+7. Probes: client sends `Accept-Encoding: gzip` (body must stay readable,
    usage still parsed); upstream 4xx error body passes through verbatim with
    `usage=unknown` logged; unknown path passes through; killed upstream → 502
    with `error=` in the log.

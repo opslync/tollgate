@@ -20,7 +20,7 @@ Cost governance is the wedge; MCP tool-call policy (allow-lists, deny-by-default
 
 ## Status
 
-Early development. Milestones 1–4 shipped: transparent passthrough proxy (streaming included), per-agent identity via API keys, SQLite metering with dollar-cost conversion + `GET /usage`, and budgets with real-time enforcement + kill switch. Next up: OpenAI-compatible endpoints (vLLM and friends).
+Early development. Milestones 1–5 shipped: transparent passthrough proxy (streaming included), per-agent identity via API keys, SQLite metering with dollar-cost conversion + `GET /usage`, budgets with real-time enforcement + kill switch, and OpenAI-compatible endpoint support (vLLM and most agent frameworks). Next up: Helm chart + kind quickstart.
 
 ## Quickstart
 
@@ -77,6 +77,22 @@ curl -X POST http://localhost:8080/admin/agents/support-bot/kill -H "x-admin-key
 
 The kill takes effect on the very next request (milliseconds, not minutes), survives restarts, and lifts with `DELETE` on the same path.
 
+### OpenAI-compatible providers (vLLM and friends)
+
+Add an `openai`-type provider and OpenAI-style paths route to it — one Tollgate instance fronts both APIs, and a single agent identity and budget follow the agent across providers:
+
+```yaml
+providers:
+  - name: anthropic
+    base_url: "https://api.anthropic.com"
+    api_key: "${ANTHROPIC_API_KEY}"
+  - name: vllm
+    type: openai
+    base_url: "http://vllm.internal:8000"
+```
+
+OpenAI SDK users set `OPENAI_BASE_URL=http://tollgate:8080/v1` and their Tollgate agent key as the API key. For streaming token counts, request `stream_options: {"include_usage": true}` (vLLM emits the usage chunk the same way).
+
 ## Roadmap
 
 | Milestone | Scope |
@@ -85,7 +101,7 @@ The kill takes effect on the very next request (milliseconds, not minutes), surv
 | 2 ✅ | Agent identity via API keys, per-agent attribution |
 | 3 ✅ | SQLite metering, cost conversion via versioned pricing table, `GET /usage` |
 | 4 ✅ | Budgets with enforcement — alert / throttle / block — and kill switch |
-| 5 | OpenAI-compatible endpoint support (vLLM and most agent frameworks) |
+| 5 ✅ | OpenAI-compatible endpoint support (vLLM and most agent frameworks) |
 | 6 | Helm chart + kind quickstart |
 | Later | MCP tool-call policy, web dashboard |
 

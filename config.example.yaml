@@ -18,6 +18,12 @@ providers:
   - name: anthropic
     base_url: "https://api.anthropic.com"
     api_key: "${ANTHROPIC_API_KEY}"
+  # OpenAI-compatible providers (OpenAI, vLLM, most self-hosted servers).
+  # /v1/chat/completions, /v1/completions, /v1/embeddings route here; omit
+  # api_key for servers without auth (e.g. vLLM) to pass credentials through.
+  # - name: vllm
+  #   type: openai
+  #   base_url: "http://vllm.internal:8000"
 
 # Agents authenticate with their Tollgate key (min 16 chars — generate with
 # e.g. `openssl rand -hex 16`) sent in the header their SDK already uses:

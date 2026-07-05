@@ -54,6 +54,8 @@ Proxy implementation notes:
 - `FlushInterval: -1` for immediate SSE flush.
 - Usage is parsed by a tee reader wrapped around the response body in `ModifyResponse`; one structured `slog` line per request when the body completes. Parse failures never break the proxy.
 - Anthropic streaming usage: `message_start` carries model + `input_tokens` (+ cache tokens); final `message_delta` carries `output_tokens`.
+- Providers have a `type` (anthropic default | openai; one per type for now). Routing is path-based: `/v1/chat/completions`, `/v1/completions`, `/v1/embeddings` → openai provider; `/v1/messages` → anthropic; everything else → providers[0]. Credential injection is type-native (`x-api-key` vs `Authorization: Bearer`).
+- OpenAI usage semantics: `prompt_tokens` INCLUDES `cached_tokens` — the parser subtracts so `meter.Usage.InputTokens` is always the uncached remainder across providers. Streaming usage arrives in the final non-null `usage` chunk (`stream_options.include_usage`; vLLM matches) before `[DONE]`.
 
 ## Roadmap
 
@@ -61,7 +63,7 @@ Proxy implementation notes:
 - **M2** ✅ (shipped 2026-07-05): agent identity via API keys + per-agent attribution; provider key injection.
 - **M3** ✅ (shipped 2026-07-05): SQLite metering + cost conversion (versioned pricing YAML) + `GET /usage`.
 - **M4** ✅ (shipped 2026-07-05): budgets with enforcement — alert / throttle / block — + kill switch.
-- **M5**: OpenAI-compatible endpoint support (covers vLLM and most agent frameworks).
+- **M5** ✅ (shipped 2026-07-05): OpenAI-compatible endpoint support (covers vLLM and most agent frameworks).
 - **M6**: Helm chart + kind quickstart.
 - **After M6**: MCP tool-call policy, React dashboard.
 
