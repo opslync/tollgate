@@ -5,6 +5,9 @@ import (
 	"fmt"
 	"net/url"
 	"os"
+	"strconv"
+	"strings"
+	"time"
 
 	"gopkg.in/yaml.v3"
 )
@@ -14,10 +17,55 @@ type Config struct {
 	Storage   Storage    `yaml:"storage"`
 	Providers []Provider `yaml:"providers"`
 	Agents    []Agent    `yaml:"agents"`
+	Budgets   []Budget   `yaml:"budgets"`
 }
 
 type Server struct {
 	Listen string `yaml:"listen"`
+	// AdminKey, when set, enables the /admin endpoints (kill switch).
+	// Supports ${ENV_VAR} references.
+	AdminKey string `yaml:"admin_key"`
+}
+
+// Budget is a rolling-window spend limit for one agent or one team.
+type Budget struct {
+	Agent string `yaml:"agent"` // exactly one of Agent or Team
+	Team  string `yaml:"team"`
+	// Window is a rolling duration: Go syntax plus an integer d suffix (7d).
+	Window Duration `yaml:"window"`
+	// At least one limit must be set. LimitTokens counts input + output.
+	LimitUSD    float64 `yaml:"limit_usd"`
+	LimitTokens int64   `yaml:"limit_tokens"`
+	// AlertAt is the fraction of the limit that triggers a warning log.
+	AlertAt float64 `yaml:"alert_at"` // default 0.8
+	// Action at the limit: "block" (403) or "throttle" (429 + Retry-After,
+	// one request allowed per ThrottleInterval).
+	Action           string   `yaml:"action"`            // default "block"
+	ThrottleInterval Duration `yaml:"throttle_interval"` // default 30s
+}
+
+// Duration parses Go durations plus an integer day suffix ("7d").
+type Duration time.Duration
+
+func (d *Duration) UnmarshalYAML(value *yaml.Node) error {
+	var s string
+	if err := value.Decode(&s); err != nil {
+		return err
+	}
+	if days, ok := strings.CutSuffix(s, "d"); ok {
+		n, err := strconv.Atoi(days)
+		if err != nil {
+			return fmt.Errorf("invalid duration %q", s)
+		}
+		*d = Duration(time.Duration(n) * 24 * time.Hour)
+		return nil
+	}
+	parsed, err := time.ParseDuration(s)
+	if err != nil {
+		return fmt.Errorf("invalid duration %q", s)
+	}
+	*d = Duration(parsed)
+	return nil
 }
 
 type Storage struct {
@@ -70,6 +118,7 @@ func Load(path string) (*Config, error) {
 	if err := cfg.validate(); err != nil {
 		return nil, fmt.Errorf("invalid config %s: %w", path, err)
 	}
+	cfg.applyDefaults()
 	return &cfg, nil
 }
 
@@ -116,7 +165,60 @@ func (c *Config) validate() error {
 		}
 		agentKeys[a.Key] = true
 	}
+
+	teams := make(map[string]bool)
+	for _, a := range c.Agents {
+		if a.Team != "" {
+			teams[a.Team] = true
+		}
+	}
+	for i, b := range c.Budgets {
+		if (b.Agent == "") == (b.Team == "") {
+			return fmt.Errorf("budgets[%d]: exactly one of agent or team must be set", i)
+		}
+		if b.Agent != "" && !agentNames[b.Agent] {
+			return fmt.Errorf("budgets[%d]: unknown agent %q", i, b.Agent)
+		}
+		if b.Team != "" && !teams[b.Team] {
+			return fmt.Errorf("budgets[%d]: no agent belongs to team %q", i, b.Team)
+		}
+		if b.Window <= 0 {
+			return fmt.Errorf("budgets[%d] (%s): window must be set", i, b.target())
+		}
+		if b.LimitUSD <= 0 && b.LimitTokens <= 0 {
+			return fmt.Errorf("budgets[%d] (%s): at least one of limit_usd or limit_tokens must be positive", i, b.target())
+		}
+		if b.AlertAt < 0 || b.AlertAt > 1 {
+			return fmt.Errorf("budgets[%d] (%s): alert_at must be within (0, 1]", i, b.target())
+		}
+		if b.Action != "" && b.Action != "block" && b.Action != "throttle" {
+			return fmt.Errorf("budgets[%d] (%s): action must be block or throttle, got %q", i, b.target(), b.Action)
+		}
+	}
 	return nil
+}
+
+func (b Budget) target() string {
+	if b.Agent != "" {
+		return "agent " + b.Agent
+	}
+	return "team " + b.Team
+}
+
+// applyDefaults fills optional budget fields after validation.
+func (c *Config) applyDefaults() {
+	for i := range c.Budgets {
+		b := &c.Budgets[i]
+		if b.AlertAt == 0 {
+			b.AlertAt = 0.8
+		}
+		if b.Action == "" {
+			b.Action = "block"
+		}
+		if b.ThrottleInterval <= 0 {
+			b.ThrottleInterval = Duration(30 * time.Second)
+		}
+	}
 }
 
 // expandEnv resolves ${VAR} references in secret-bearing fields. A reference
@@ -128,17 +230,33 @@ func (c *Config) expandEnv() error {
 		if p.APIKey == "" {
 			continue
 		}
-		var missing []string
-		p.APIKey = os.Expand(p.APIKey, func(name string) string {
-			v := os.Getenv(name)
-			if v == "" {
-				missing = append(missing, name)
-			}
-			return v
-		})
-		if len(missing) > 0 {
-			return fmt.Errorf("providers[%d] (%s): api_key references unset environment variable(s): %v", i, p.Name, missing)
+		expanded, err := expandSecret(p.APIKey)
+		if err != nil {
+			return fmt.Errorf("providers[%d] (%s): api_key %w", i, p.Name, err)
 		}
+		p.APIKey = expanded
+	}
+	if c.Server.AdminKey != "" {
+		expanded, err := expandSecret(c.Server.AdminKey)
+		if err != nil {
+			return fmt.Errorf("server.admin_key %w", err)
+		}
+		c.Server.AdminKey = expanded
 	}
 	return nil
+}
+
+func expandSecret(s string) (string, error) {
+	var missing []string
+	expanded := os.Expand(s, func(name string) string {
+		v := os.Getenv(name)
+		if v == "" {
+			missing = append(missing, name)
+		}
+		return v
+	})
+	if len(missing) > 0 {
+		return "", fmt.Errorf("references unset environment variable(s): %v", missing)
+	}
+	return expanded, nil
 }
