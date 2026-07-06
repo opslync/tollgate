@@ -19,3 +19,13 @@ unattributed. Add agents (and budgets) under .Values.config.
 NOTE: persistence is disabled; usage history and kill-switch state are lost
 when the pod restarts. Set persistence.enabled=true for real deployments.
 {{- end }}
+{{- if .Values.config.kubernetes.enabled }}
+
+Kubernetes-native identity is ON: agent pods are attributed by their
+ServiceAccount, no per-agent Tollgate key needed. Label a namespace to assign
+its traffic to a team:
+
+  kubectl label namespace <ns> tollgate.io/team=<team>
+
+The label takes precedence over any static teams: mapping in the config.
+{{- end }}

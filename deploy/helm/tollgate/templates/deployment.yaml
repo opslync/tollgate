@@ -20,6 +20,7 @@ spec:
       annotations:
         checksum/config: {{ include (print $.Template.BasePath "/configmap.yaml") . | sha256sum }}
     spec:
+      serviceAccountName: {{ include "tollgate.serviceAccountName" . }}
       securityContext:
         runAsNonRoot: true
         runAsUser: 65532

@@ -1,0 +1,36 @@
+{{- if and .Values.config.kubernetes.enabled .Values.rbac.create }}
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRole
+metadata:
+  name: {{ include "tollgate.fullname" . }}
+  labels:
+    {{- include "tollgate.labels" . | nindent 4 }}
+rules:
+  # Read pod/workload metadata for attribution enrichment.
+  - apiGroups: [""]
+    resources: ["pods", "serviceaccounts", "namespaces"]
+    verbs: ["get", "list", "watch"]
+  - apiGroups: ["apps"]
+    resources: ["replicasets"]
+    verbs: ["get", "list", "watch"]
+  # Authenticate agent ServiceAccount tokens. TokenReview is cluster-scoped by
+  # API design — there is no namespaced equivalent.
+  - apiGroups: ["authentication.k8s.io"]
+    resources: ["tokenreviews"]
+    verbs: ["create"]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRoleBinding
+metadata:
+  name: {{ include "tollgate.fullname" . }}
+  labels:
+    {{- include "tollgate.labels" . | nindent 4 }}
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: ClusterRole
+  name: {{ include "tollgate.fullname" . }}
+subjects:
+  - kind: ServiceAccount
+    name: {{ include "tollgate.serviceAccountName" . }}
+    namespace: {{ .Release.Namespace }}
+{{- end }}

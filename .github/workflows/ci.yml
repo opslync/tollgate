@@ -38,3 +38,4 @@ jobs:
       - run: helm lint deploy/helm/tollgate
       - run: helm template ci deploy/helm/tollgate > /dev/null
       - run: helm template ci deploy/helm/tollgate --set persistence.enabled=true --set existingSecret=keys > /dev/null
+      - run: helm template ci deploy/helm/tollgate --set config.kubernetes.enabled=true --set serviceAccount.create=true --set rbac.create=true > /dev/null

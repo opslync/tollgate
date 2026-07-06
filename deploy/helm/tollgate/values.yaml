@@ -7,6 +7,18 @@ service:
   type: ClusterIP
   port: 8080
 
+# ServiceAccount for the Tollgate pod. Set create: true to have the chart make
+# one (required for Kubernetes-native identity, so the RBAC below can bind it);
+# otherwise the pod uses `name` if set, or the namespace default.
+serviceAccount:
+  create: false
+  name: ""
+
+# ClusterRole + ClusterRoleBinding granting the read + tokenreview access that
+# config.kubernetes.enabled needs. Only rendered when both toggles are true.
+rbac:
+  create: false
+
 # Name of an existing Secret whose keys become environment variables —
 # the target for ${ENV_VAR} references in config (ANTHROPIC_API_KEY,
 # TOLLGATE_ADMIN_KEY, ...). Create it before installing:
@@ -37,6 +49,13 @@ config:
   # WARNING: no agents = authentication disabled (open passthrough mode).
   agents: []
   budgets: []
+  # Kubernetes-native identity: attribute agent pods by their ServiceAccount
+  # token, no per-agent key. Requires serviceAccount.create and rbac.create.
+  kubernetes:
+    enabled: false
+  # Map namespaces to teams for attribution. A namespace's tollgate.io/team
+  # label overrides this at runtime.
+  teams: []
 
 resources:
   requests:
