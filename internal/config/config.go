@@ -13,11 +13,33 @@ import (
 )
 
 type Config struct {
-	Server    Server     `yaml:"server"`
-	Storage   Storage    `yaml:"storage"`
-	Providers []Provider `yaml:"providers"`
-	Agents    []Agent    `yaml:"agents"`
-	Budgets   []Budget   `yaml:"budgets"`
+	Server     Server     `yaml:"server"`
+	Storage    Storage    `yaml:"storage"`
+	Providers  []Provider `yaml:"providers"`
+	Agents     []Agent    `yaml:"agents"`
+	Budgets    []Budget   `yaml:"budgets"`
+	Kubernetes Kubernetes `yaml:"kubernetes"`
+	Teams      []Team     `yaml:"teams"`
+}
+
+// Kubernetes enables in-cluster identity: agent pods are attributed from their
+// ServiceAccount token via TokenReview, with no per-agent Tollgate key. Off by
+// default so non-K8s installs stay zero-dependency.
+type Kubernetes struct {
+	Enabled bool `yaml:"enabled"`
+	// Namespaces is reserved for future scoping; an empty list means the pod
+	// cache reads across all namespaces (the ClusterRole is cluster-wide either way).
+	Namespaces   []string `yaml:"namespaces"`
+	PollInterval Duration `yaml:"poll_interval"` // pod-cache refresh; default 15s, must be >= 1s
+	// Audiences is the TokenReview audience allowlist; empty accepts any.
+	Audiences []string `yaml:"audiences"`
+}
+
+// Team maps a set of namespaces to a team name for attribution. A namespace's
+// tollgate.io/team label, resolved at runtime, takes precedence over this list.
+type Team struct {
+	Name       string   `yaml:"name"`
+	Namespaces []string `yaml:"namespaces"`
 }
 
 type Server struct {
@@ -184,10 +206,34 @@ func (c *Config) validate() error {
 	}
 
 	teams := make(map[string]bool)
+	teamNames := make(map[string]bool)
+	claimedNS := make(map[string]string)
+	for i, t := range c.Teams {
+		if t.Name == "" {
+			return fmt.Errorf("teams[%d]: name must be set", i)
+		}
+		if teamNames[t.Name] {
+			return fmt.Errorf("teams[%d]: duplicate team name %q", i, t.Name)
+		}
+		teamNames[t.Name] = true
+		teams[t.Name] = true
+		for _, ns := range t.Namespaces {
+			if other, dup := claimedNS[ns]; dup {
+				return fmt.Errorf("teams[%d] (%s): namespace %q already claimed by team %q", i, t.Name, ns, other)
+			}
+			claimedNS[ns] = t.Name
+		}
+	}
+	// Budget team references may resolve to a teams[] entry or to any team
+	// named inline on an agent — teams[] is optional, so inline-only configs
+	// keep validating exactly as before.
 	for _, a := range c.Agents {
 		if a.Team != "" {
 			teams[a.Team] = true
 		}
+	}
+	if c.Kubernetes.PollInterval != 0 && time.Duration(c.Kubernetes.PollInterval) < time.Second {
+		return fmt.Errorf("kubernetes.poll_interval must be at least 1s")
 	}
 	for i, b := range c.Budgets {
 		if (b.Agent == "") == (b.Team == "") {
@@ -240,6 +286,9 @@ func (c *Config) applyDefaults() {
 		if b.ThrottleInterval <= 0 {
 			b.ThrottleInterval = Duration(30 * time.Second)
 		}
+	}
+	if c.Kubernetes.Enabled && c.Kubernetes.PollInterval == 0 {
+		c.Kubernetes.PollInterval = Duration(15 * time.Second)
 	}
 }
 
