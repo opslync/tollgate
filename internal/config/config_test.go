@@ -193,6 +193,122 @@ budgets:
 	}
 }
 
+func TestLoadKubernetesAndTeams(t *testing.T) {
+	cfg, err := Load(writeConfig(t, `
+server:
+  listen: ":8080"
+providers:
+  - name: anthropic
+    base_url: "https://api.anthropic.com"
+kubernetes:
+  enabled: true
+  audiences: ["https://kubernetes.default.svc"]
+teams:
+  - name: payments
+    namespaces: [payments, payments-staging]
+  - name: search
+    namespaces: [search]
+budgets:
+  - team: payments
+    window: 24h
+    limit_usd: 50.0
+`))
+	if err != nil {
+		t.Fatalf("Load: %v", err)
+	}
+	if !cfg.Kubernetes.Enabled {
+		t.Error("kubernetes.enabled should be true")
+	}
+	if time.Duration(cfg.Kubernetes.PollInterval) != 15*time.Second {
+		t.Errorf("poll_interval default = %v, want 15s", time.Duration(cfg.Kubernetes.PollInterval))
+	}
+	if len(cfg.Teams) != 2 || cfg.Teams[0].Name != "payments" {
+		t.Errorf("teams = %+v", cfg.Teams)
+	}
+}
+
+func TestKubernetesPollInterval(t *testing.T) {
+	cfg, err := Load(writeConfig(t, `
+server:
+  listen: ":8080"
+providers:
+  - name: anthropic
+    base_url: "https://api.anthropic.com"
+kubernetes:
+  enabled: true
+  poll_interval: 30s
+`))
+	if err != nil {
+		t.Fatalf("Load: %v", err)
+	}
+	if time.Duration(cfg.Kubernetes.PollInterval) != 30*time.Second {
+		t.Errorf("poll_interval = %v, want 30s", time.Duration(cfg.Kubernetes.PollInterval))
+	}
+
+	// Default stays zero when kubernetes is disabled.
+	off, err := Load(writeConfig(t, `
+server:
+  listen: ":8080"
+providers:
+  - name: anthropic
+    base_url: "https://api.anthropic.com"
+`))
+	if err != nil {
+		t.Fatalf("Load: %v", err)
+	}
+	if off.Kubernetes.PollInterval != 0 {
+		t.Errorf("poll_interval = %v, want 0 when disabled", off.Kubernetes.PollInterval)
+	}
+}
+
+func TestKubernetesAndTeamsErrors(t *testing.T) {
+	base := `
+server:
+  listen: ":8080"
+providers:
+  - name: a
+    base_url: "https://x"
+`
+	tests := []struct {
+		name, extra, wantErr string
+	}{
+		{"poll too small", "kubernetes:\n  enabled: true\n  poll_interval: 500ms\n", "at least 1s"},
+		{"duplicate team", "teams:\n  - name: t1\n    namespaces: [a]\n  - name: t1\n    namespaces: [b]\n", "duplicate team name"},
+		{"double-claimed namespace", "teams:\n  - name: t1\n    namespaces: [shared]\n  - name: t2\n    namespaces: [shared]\n", "already claimed"},
+		{"team without name", "teams:\n  - namespaces: [a]\n", "name must be set"},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			_, err := Load(writeConfig(t, base+tt.extra))
+			if err == nil || !strings.Contains(err.Error(), tt.wantErr) {
+				t.Errorf("err = %v, want containing %q", err, tt.wantErr)
+			}
+		})
+	}
+}
+
+func TestBudgetReferencesTeamsBlock(t *testing.T) {
+	// A budget may target a team declared only under teams:, with no agent
+	// carrying that team inline.
+	_, err := Load(writeConfig(t, `
+server:
+  listen: ":8080"
+providers:
+  - name: a
+    base_url: "https://x"
+teams:
+  - name: payments
+    namespaces: [payments]
+budgets:
+  - team: payments
+    window: 24h
+    limit_usd: 10.0
+`))
+	if err != nil {
+		t.Fatalf("budget referencing teams-only team should validate: %v", err)
+	}
+}
+
 func TestAdminKeyExpansion(t *testing.T) {
 	t.Setenv("TEST_ADMIN_KEY", "super-secret")
 	cfg, err := Load(writeConfig(t, `

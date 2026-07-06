@@ -50,6 +50,11 @@ type RequestRecord struct {
 	Stream     bool
 	Usage      meter.Usage
 	UsageOK    bool
+	// K8s workload enrichment; zero-valued for static-key-authenticated requests.
+	Pod            string
+	WorkloadKind   string
+	Workload       string
+	ServiceAccount string
 }
 
 // Recorder receives completed requests (e.g. to persist them). It runs on
@@ -162,6 +167,12 @@ func (p *Proxy) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	}
 	if agent, ok := auth.FromContext(r.Context()); ok {
 		rec.Agent = agent
+	}
+	if wl, ok := auth.WorkloadFromContext(r.Context()); ok {
+		rec.Pod = wl.Pod
+		rec.WorkloadKind = wl.WorkloadKind
+		rec.Workload = wl.Workload
+		rec.ServiceAccount = wl.ServiceAccount
 	}
 	if state.parser != nil {
 		rec.Usage, rec.UsageOK = state.parser.Finish()

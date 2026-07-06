@@ -20,6 +20,7 @@ import (
 	"github.com/opslync/tollgate/internal/auth"
 	"github.com/opslync/tollgate/internal/budget"
 	"github.com/opslync/tollgate/internal/config"
+	"github.com/opslync/tollgate/internal/k8s"
 	"github.com/opslync/tollgate/internal/proxy"
 	"github.com/opslync/tollgate/internal/store"
 	"github.com/opslync/tollgate/pricing"
@@ -71,7 +72,11 @@ func run() error {
 			Namespace: rec.Agent.Namespace, Provider: rec.Provider,
 			Model: rec.Model, Method: rec.Method, Path: rec.Path,
 			Status: rec.Status, DurationMS: rec.DurationMS, Stream: rec.Stream,
-			Usage: rec.Usage,
+			Usage:          rec.Usage,
+			Pod:            rec.Pod,
+			WorkloadKind:   rec.WorkloadKind,
+			Workload:       rec.Workload,
+			ServiceAccount: rec.ServiceAccount,
 		}
 		if rec.UsageOK {
 			cost, priced := prices.Cost(rec.Model, rec.Usage)
@@ -103,9 +108,27 @@ func run() error {
 	}
 	defaultProxy := proxies[cfg.Providers[0].Type]
 
-	authn := auth.New(cfg.Agents)
+	// Kubernetes-native identity: when enabled, ServiceAccount tokens that miss
+	// the static agent map are authenticated via TokenReview and enriched from
+	// the pod cache. All of internal/k8s stays inert when disabled.
+	var reviewer auth.TokenReviewer
+	var podCache *k8s.PodCache
+	var teamMap *k8s.TeamMap
+	if cfg.Kubernetes.Enabled {
+		k8sClient, err := k8s.NewClient()
+		if err != nil {
+			return fmt.Errorf("kubernetes enabled: %w", err)
+		}
+		podCache = k8s.NewPodCache(k8sClient, time.Duration(cfg.Kubernetes.PollInterval))
+		teamMap = k8s.NewTeamMap(k8sClient, cfg.Teams)
+		reviewer = k8s.NewResolver(
+			k8s.NewAuthenticator(k8sClient, cfg.Kubernetes.Audiences), podCache, teamMap, logger)
+		logger.Info("kubernetes identity enabled", "poll_interval", time.Duration(cfg.Kubernetes.PollInterval))
+	}
+
+	authn := auth.New(cfg.Agents, reviewer)
 	wrap := func(h http.Handler) http.Handler { return h }
-	if len(cfg.Agents) > 0 {
+	if len(cfg.Agents) > 0 || reviewer != nil {
 		wrap = authn.Middleware
 	} else {
 		logger.Warn("no agents configured: authentication disabled, requests pass through unattributed")
@@ -152,6 +175,13 @@ func run() error {
 
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer stop()
+
+	// Poll goroutines share the signal context so SIGTERM stops them as part of
+	// graceful shutdown.
+	if cfg.Kubernetes.Enabled {
+		go podCache.Run(ctx, logger)
+		go teamMap.Run(ctx, time.Duration(cfg.Kubernetes.PollInterval), logger)
+	}
 
 	errCh := make(chan error, 1)
 	go func() {

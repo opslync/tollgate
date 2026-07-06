@@ -288,7 +288,7 @@ func TestAttributionLogged(t *testing.T) {
 	logger := slog.New(slog.NewTextHandler(logs, nil))
 	authn := auth.New([]config.Agent{
 		{Name: "support-bot", Key: "tg_agent_key_0123456789abcdef", Team: "support", Namespace: "prod"},
-	})
+	}, nil)
 	srv := httptest.NewServer(authn.Middleware(New(Options{Name: "test", Upstream: u, APIKey: "sk-real"}, logger)))
 	defer srv.Close()
 
@@ -325,7 +325,7 @@ func TestRecorderReceivesCompletedRequest(t *testing.T) {
 
 	authn := auth.New([]config.Agent{
 		{Name: "support-bot", Key: "tg_agent_key_0123456789abcdef", Team: "support", Namespace: "prod"},
-	})
+	}, nil)
 	srv := httptest.NewServer(authn.Middleware(p))
 	defer srv.Close()
 
@@ -349,6 +349,50 @@ func TestRecorderReceivesCompletedRequest(t *testing.T) {
 		}
 		if rec.Status != 200 || rec.Provider != "test" || rec.Path != "/v1/messages" {
 			t.Errorf("record = %+v", rec)
+		}
+	case <-time.After(2 * time.Second):
+		t.Fatal("recorder was never called")
+	}
+}
+
+// TestRecorderCarriesWorkload verifies that workload enrichment placed in the
+// request context (as the K8s-aware auth middleware does) reaches the Recorder.
+func TestRecorderCarriesWorkload(t *testing.T) {
+	upstream := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		io.WriteString(w, `{"model":"claude-sonnet-5","usage":{"input_tokens":10,"output_tokens":5}}`)
+	}))
+	defer upstream.Close()
+
+	u, _ := url.Parse(upstream.URL)
+	logger := slog.New(slog.NewTextHandler(io.Discard, nil))
+	p := New(Options{Name: "test", Upstream: u}, logger)
+
+	recorded := make(chan RequestRecord, 1)
+	p.SetRecorder(func(rec RequestRecord) { recorded <- rec })
+
+	// Stand-in for the K8s-aware auth middleware: inject workload into context.
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		r = r.WithContext(auth.WithWorkload(r.Context(), auth.Workload{
+			Pod: "checkout-abc", ServiceAccount: "checkout",
+			WorkloadKind: "Deployment", Workload: "checkout-worker",
+		}))
+		p.ServeHTTP(w, r)
+	}))
+	defer srv.Close()
+
+	resp, err := http.Post(srv.URL+"/v1/messages", "application/json", strings.NewReader(`{}`))
+	if err != nil {
+		t.Fatal(err)
+	}
+	io.Copy(io.Discard, resp.Body)
+	resp.Body.Close()
+
+	select {
+	case rec := <-recorded:
+		if rec.Pod != "checkout-abc" || rec.ServiceAccount != "checkout" ||
+			rec.WorkloadKind != "Deployment" || rec.Workload != "checkout-worker" {
+			t.Errorf("workload fields = %+v", rec)
 		}
 	case <-time.After(2 * time.Second):
 		t.Fatal("recorder was never called")

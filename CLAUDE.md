@@ -59,17 +59,36 @@ Proxy implementation notes:
 
 ## Roadmap
 
-- **M1** ✅ (shipped 2026-07-05): transparent passthrough proxy to Anthropic; streaming included; per-request token usage logged to stdout.
-- **M2** ✅ (shipped 2026-07-05): agent identity via API keys + per-agent attribution; provider key injection.
-- **M3** ✅ (shipped 2026-07-05): SQLite metering + cost conversion (versioned pricing YAML) + `GET /usage`.
-- **M4** ✅ (shipped 2026-07-05): budgets with enforcement — alert / throttle / block — + kill switch.
-- **M5** ✅ (shipped 2026-07-05): OpenAI-compatible endpoint support (covers vLLM and most agent frameworks).
-- **M6** ✅ (shipped 2026-07-05): Helm chart + kind quickstart.
-- **After M6**: MCP tool-call policy, React dashboard.
+**Shipped (v0.1.0):**
+- **M1** ✅ (2026-07-05): transparent passthrough proxy to Anthropic; streaming included; per-request token usage logged to stdout.
+- **M2** ✅ (2026-07-05): agent identity via API keys + per-agent attribution; provider key injection.
+- **M3** ✅ (2026-07-05): SQLite metering + cost conversion (versioned pricing YAML) + `GET /usage`.
+- **M4** ✅ (2026-07-05): budgets with enforcement — alert / throttle / block — + kill switch.
+- **M5** ✅ (2026-07-05): OpenAI-compatible endpoint support (covers vLLM and most agent frameworks).
+- **M6** ✅ (2026-07-05): Helm chart + kind quickstart.
+
+**Post-v0.1.0 sequencing** (adoption-led: meet platform teams where they are before building the hardest consumer — MCP enforcement — on top of a general policy engine):
+
+*Phase 2 — Kubernetes awareness*
+- **M7**: Kubernetes-native identity & attribution. ServiceAccount-bound identity (TokenReview/JWKS) alongside static API keys; pod → namespace/deployment/ServiceAccount enrichment via K8s API watch+cache; namespace/label → team mapping; `GET /usage` grouping by team/deployment.
+- **M8**: Prometheus metrics + OTel export. `/metrics` (per-agent/team token/cost counters, latency histograms, budget-state gauges); OTLP trace export per request; Grafana dashboard JSON + `ServiceMonitor` in Helm. Meets platform teams in Grafana instead of waiting on a dashboard.
+- **M9**: MCP passthrough + audit-only logging. Transparent proxy for MCP servers (Streamable HTTP/SSE); every tool call logged (agent, server, tool, args summary, status, latency) to the existing audit store; `GET /audit/tools`. No enforcement yet — plants the "we see every tool call" category flag ~2 quarters before M11.
+
+*Phase 3 — Policy engine*
+- **M10**: General policy engine. One evaluation chassis (subject selectors, rule type, effect, precedence, default posture) that budgets (M4) get refactored onto and model-access rules plug into; `environment` dimension (dev/staging/prod); dry-run (`effect: audit`) mode; decision logging.
+
+*Phase 4 — MCP tool governance*
+- **M11**: MCP enforcement. Tool/server allow-lists and deny-by-default as a policy rule type (rides on M9 + M10); approval gates (`require_approval` + webhook/Slack notify + TTL timeout-deny); shipped presets for GitHub/AWS/DB/kubectl-style tools.
+- **M12**: Audit export & compliance pack. JSONL/CSV export with filters; hash-chained tamper-evident audit records + verification CLI; retention policies; EU AI Act / SOC 2 mapping docs. First natural OSS/paid seam (compliance evidence packs, long retention, signed attestations → paid tier).
+
+*Phase 5 — Dashboard* (after M12, once the paid surface — policy management, approval inbox, fleet view, compliance export — is well-defined; Prometheus/Grafana from M8 covers visibility until then).
+
+**Deliberately not building:** model routing/fallback/caching (that's LiteLLM's fight, dilutes governance positioning); Postgres (SQLite is the zero-dependency install story — add it only when a real user hits the wall); dashboard before M12.
 
 ## Working agreements
 
 - One milestone per session. Small commits. Tests land with each feature.
-- Progress is tracked in GitHub milestones + issues on `opslync/tollgate` (one tracking issue per milestone, M2–M6 = issues #1–#5). A milestone session ends by checking off its issue's scope list and closing the issue and milestone.
+- Progress is tracked in GitHub milestones + issues on `opslync/tollgate` (one tracking issue per milestone, M2–M6 = issues #1–#5, M7 = issue #6). A milestone session ends by checking off its issue's scope list and closing the issue and milestone.
 - `make build` / `make test` / `make lint` must stay green; CI runs build, `go test -race`, golangci-lint, and helm lint. After pushing, verify with `gh run list` — local lint is weaker than CI's (golangci-lint isn't installed locally), and CI was once red for four milestones before anyone looked.
 - Maintainer background: DevOps engineer, 10 years EKS/Kubernetes, comfortable in Go.
+- Model routing: Sonnet (default) handles normal work — research, lookups, small fixes, reviews. Delegate heavy lifting — new milestone implementation, large refactors, architecture changes — to a subagent with `model: "opus"` (or `"fable"`) via the Agent tool's model override, rather than doing it inline on the default model.

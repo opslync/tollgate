@@ -50,3 +50,25 @@ budgets:
     alert_at: 0.75
     action: throttle
     throttle_interval: 60s
+
+# Kubernetes-native identity (optional; disabled by default). When enabled and
+# running in-cluster, an agent pod with no Tollgate key is attributed by its
+# ServiceAccount token (validated via the Kubernetes TokenReview API) — its
+# agent name becomes "<namespace>/<workload>" (e.g. payments/checkout-worker).
+# Static agent keys above keep working unchanged for out-of-cluster agents.
+# Requires the ServiceAccount + RBAC from the Helm chart (serviceAccount.create,
+# rbac.create).
+kubernetes:
+  enabled: false
+  # poll_interval: 15s        # pod-cache refresh; must be >= 1s
+  # audiences: []             # TokenReview audience allowlist; empty accepts any
+
+# Map namespaces to teams so budgets and /usage can aggregate by team. A
+# namespace's `tollgate.io/team` label (set with `kubectl label namespace <ns>
+# tollgate.io/team=<team>`) is resolved at runtime and takes precedence over
+# this static list. Each namespace may belong to at most one team here.
+teams:
+  - name: payments
+    namespaces: [payments, payments-staging]
+  - name: search
+    namespaces: [search]

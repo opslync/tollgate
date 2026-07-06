@@ -21,7 +21,7 @@ type usageResponse struct {
 
 // UsageHandler answers GET /usage. Query parameters:
 //
-//	group_by  agent (default) | team | namespace | model | provider
+//	group_by  agent (default) | team | namespace | model | provider | deployment
 //	since     RFC3339 timestamp or relative duration like 24h (default 24h)
 //	until     RFC3339 timestamp (default now)
 //	agent     optional exact-match filter
