@@ -25,7 +25,8 @@ func seededStore(t *testing.T) *store.Store {
 	ctx := context.Background()
 	records := []store.Record{
 		{Time: now, Agent: "support-bot", Team: "support", Provider: "anthropic", Model: "claude-sonnet-5",
-			Status: 200, Usage: meter.Usage{InputTokens: 100, OutputTokens: 50}, CostUSD: 0.00105},
+			Status: 200, Usage: meter.Usage{InputTokens: 100, OutputTokens: 50}, CostUSD: 0.00105,
+			WorkloadKind: "Deployment", Workload: "support-worker"},
 		{Time: now, Agent: "research-bot", Team: "research", Provider: "anthropic", Model: "claude-opus-4-8",
 			Status: 200, Usage: meter.Usage{InputTokens: 1000, OutputTokens: 500}, CostUSD: 0.0175},
 		{Time: now.Add(-72 * time.Hour), Agent: "support-bot", Team: "support", Provider: "anthropic",
@@ -91,6 +92,26 @@ func TestUsageAgentFilter(t *testing.T) {
 	}
 	if len(resp.Rows) != 1 || resp.Rows[0].Key != "support-bot" || resp.Rows[0].InputTokens != 100 {
 		t.Errorf("rows = %+v", resp.Rows)
+	}
+}
+
+func TestUsageGroupByDeployment(t *testing.T) {
+	handler := UsageHandler(seededStore(t))
+	code, resp := getUsage(t, handler, "?group_by=deployment")
+	if code != http.StatusOK {
+		t.Fatalf("status = %d", code)
+	}
+	if resp.GroupBy != "deployment" {
+		t.Errorf("group_by = %q, want deployment", resp.GroupBy)
+	}
+	var found bool
+	for _, row := range resp.Rows {
+		if row.Key == "support-worker" && row.Requests == 1 {
+			found = true
+		}
+	}
+	if !found {
+		t.Errorf("expected a support-worker deployment row, got %+v", resp.Rows)
 	}
 }
 
