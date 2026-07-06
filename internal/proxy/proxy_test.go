@@ -288,7 +288,7 @@ func TestAttributionLogged(t *testing.T) {
 	logger := slog.New(slog.NewTextHandler(logs, nil))
 	authn := auth.New([]config.Agent{
 		{Name: "support-bot", Key: "tg_agent_key_0123456789abcdef", Team: "support", Namespace: "prod"},
-	})
+	}, nil)
 	srv := httptest.NewServer(authn.Middleware(New(Options{Name: "test", Upstream: u, APIKey: "sk-real"}, logger)))
 	defer srv.Close()
 
@@ -325,7 +325,7 @@ func TestRecorderReceivesCompletedRequest(t *testing.T) {
 
 	authn := auth.New([]config.Agent{
 		{Name: "support-bot", Key: "tg_agent_key_0123456789abcdef", Team: "support", Namespace: "prod"},
-	})
+	}, nil)
 	srv := httptest.NewServer(authn.Middleware(p))
 	defer srv.Close()
 

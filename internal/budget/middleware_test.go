@@ -20,7 +20,7 @@ func middlewareServer(t *testing.T, e *Engine) *httptest.Server {
 	next := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		io.WriteString(w, "forwarded")
 	})
-	authn := auth.New([]config.Agent{{Name: "support-bot", Key: middlewareTestKey, Team: "support"}})
+	authn := auth.New([]config.Agent{{Name: "support-bot", Key: middlewareTestKey, Team: "support"}}, nil)
 	srv := httptest.NewServer(authn.Middleware(e.Middleware(next)))
 	t.Cleanup(srv.Close)
 	return srv

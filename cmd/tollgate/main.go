@@ -103,7 +103,7 @@ func run() error {
 	}
 	defaultProxy := proxies[cfg.Providers[0].Type]
 
-	authn := auth.New(cfg.Agents)
+	authn := auth.New(cfg.Agents, nil)
 	wrap := func(h http.Handler) http.Handler { return h }
 	if len(cfg.Agents) > 0 {
 		wrap = authn.Middleware
