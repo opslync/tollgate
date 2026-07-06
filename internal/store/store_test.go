@@ -2,6 +2,7 @@ package store
 
 import (
 	"context"
+	"database/sql"
 	"math"
 	"path/filepath"
 	"sync"
@@ -161,6 +162,116 @@ func TestKillPersistence(t *testing.T) {
 	kills, _ = s.Kills(ctx)
 	if len(kills) != 0 {
 		t.Errorf("kills after revive = %v", kills)
+	}
+}
+
+func TestWorkloadAttribution(t *testing.T) {
+	s := openTestStore(t)
+	ctx := context.Background()
+	now := time.Now()
+
+	r := record("payments/checkout-worker", "payments", "claude-sonnet-5", 100, 50, 0.01, now)
+	r.Pod = "checkout-worker-abc123"
+	r.WorkloadKind = "Deployment"
+	r.Workload = "checkout-worker"
+	r.ServiceAccount = "checkout"
+	if err := s.Insert(ctx, r); err != nil {
+		t.Fatal(err)
+	}
+
+	rows, err := s.Aggregate(ctx, AggregateOptions{
+		GroupBy: "deployment",
+		Since:   now.Add(-time.Hour),
+		Until:   now.Add(time.Hour),
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(rows) != 1 || rows[0].Key != "checkout-worker" || rows[0].Requests != 1 {
+		t.Errorf("group by deployment = %+v", rows)
+	}
+}
+
+// TestFreshDBColumnDefaults verifies a record inserted without workload fields
+// stores empty-string defaults for the four M7 columns.
+func TestFreshDBColumnDefaults(t *testing.T) {
+	s := openTestStore(t)
+	ctx := context.Background()
+	if err := s.Insert(ctx, record("a", "t", "m", 1, 1, 0.1, time.Now())); err != nil {
+		t.Fatal(err)
+	}
+	var pod, kind, workload, sa string
+	row := s.db.QueryRowContext(ctx, `SELECT pod, workload_kind, workload, service_account FROM requests LIMIT 1`)
+	if err := row.Scan(&pod, &kind, &workload, &sa); err != nil {
+		t.Fatal(err)
+	}
+	if pod != "" || kind != "" || workload != "" || sa != "" {
+		t.Errorf("defaults = %q/%q/%q/%q, want empty", pod, kind, workload, sa)
+	}
+}
+
+// TestMigrateAddsColumns opens a hand-written pre-M7 database and asserts Open
+// evolves it: the four new columns appear, and pre-existing rows read back the
+// empty-string default.
+func TestMigrateAddsColumns(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "old.db")
+
+	// The pre-M7 requests table, verbatim (no workload columns).
+	old := `
+CREATE TABLE requests (
+	id INTEGER PRIMARY KEY AUTOINCREMENT,
+	ts INTEGER NOT NULL,
+	agent TEXT NOT NULL DEFAULT '',
+	team TEXT NOT NULL DEFAULT '',
+	namespace TEXT NOT NULL DEFAULT '',
+	provider TEXT NOT NULL,
+	model TEXT NOT NULL DEFAULT '',
+	method TEXT NOT NULL DEFAULT '',
+	path TEXT NOT NULL DEFAULT '',
+	status INTEGER NOT NULL,
+	duration_ms INTEGER NOT NULL,
+	stream INTEGER NOT NULL DEFAULT 0,
+	input_tokens INTEGER NOT NULL DEFAULT 0,
+	output_tokens INTEGER NOT NULL DEFAULT 0,
+	cache_creation_input_tokens INTEGER NOT NULL DEFAULT 0,
+	cache_read_input_tokens INTEGER NOT NULL DEFAULT 0,
+	cost_usd REAL NOT NULL DEFAULT 0
+);`
+	db, err := sql.Open("sqlite", "file:"+path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := db.Exec(old); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := db.Exec(`INSERT INTO requests (ts, provider, status, duration_ms) VALUES (?, 'anthropic', 200, 5)`, time.Now().UnixMilli()); err != nil {
+		t.Fatal(err)
+	}
+	if err := db.Close(); err != nil {
+		t.Fatal(err)
+	}
+
+	s, err := Open(path)
+	if err != nil {
+		t.Fatalf("Open on pre-M7 db: %v", err)
+	}
+	t.Cleanup(func() { s.Close() })
+
+	var pod, kind, workload, sa string
+	row := s.db.QueryRowContext(context.Background(),
+		`SELECT pod, workload_kind, workload, service_account FROM requests LIMIT 1`)
+	if err := row.Scan(&pod, &kind, &workload, &sa); err != nil {
+		t.Fatalf("new columns not queryable after migration: %v", err)
+	}
+	if pod != "" || kind != "" || workload != "" || sa != "" {
+		t.Errorf("migrated row = %q/%q/%q/%q, want empty defaults", pod, kind, workload, sa)
+	}
+
+	// A fresh insert with workload fields must round-trip.
+	r := record("payments/x", "payments", "m", 1, 1, 0.1, time.Now())
+	r.Workload = "x"
+	if err := s.Insert(context.Background(), r); err != nil {
+		t.Fatalf("insert after migration: %v", err)
 	}
 }
 
