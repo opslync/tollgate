@@ -28,21 +28,30 @@ func (e *Engine) Middleware(next http.Handler) http.Handler {
 		case Allow:
 			next.ServeHTTP(w, r)
 		case Throttled:
+			e.recordDenied(agent, "throttled")
 			seconds := int(math.Ceil(d.RetryAfter.Seconds()))
 			w.Header().Set("Retry-After", strconv.Itoa(seconds))
 			writeError(w, http.StatusTooManyRequests, "rate_limit_error",
 				fmt.Sprintf("%s is over its budget (%s) and is throttled; retry in %ds",
 					agent.Name, describeBudget(d), seconds))
 		case BlockedBudget:
+			e.recordDenied(agent, "blocked_budget")
 			writeError(w, http.StatusForbidden, "budget_exceeded",
 				fmt.Sprintf("%s is blocked: %s; requests resume when spend ages out of the window",
 					agent.Name, describeBudget(d)))
 		case BlockedKilled:
+			e.recordDenied(agent, "blocked_killed")
 			writeError(w, http.StatusForbidden, "agent_disabled",
 				fmt.Sprintf("%s has been disabled by the kill switch; contact your Tollgate administrator",
 					agent.Name))
 		}
 	})
+}
+
+func (e *Engine) recordDenied(agent auth.Agent, reason string) {
+	if e.deniedHook != nil {
+		e.deniedHook(agent, reason)
+	}
 }
 
 func describeBudget(d Decision) string {

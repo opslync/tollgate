@@ -16,11 +16,15 @@ import (
 	"syscall"
 	"time"
 
+	"github.com/prometheus/client_golang/prometheus"
+	"github.com/prometheus/client_golang/prometheus/promhttp"
+
 	"github.com/opslync/tollgate/internal/api"
 	"github.com/opslync/tollgate/internal/auth"
 	"github.com/opslync/tollgate/internal/budget"
 	"github.com/opslync/tollgate/internal/config"
 	"github.com/opslync/tollgate/internal/k8s"
+	"github.com/opslync/tollgate/internal/metrics"
 	"github.com/opslync/tollgate/internal/proxy"
 	"github.com/opslync/tollgate/internal/store"
 	"github.com/opslync/tollgate/pricing"
@@ -64,6 +68,8 @@ func run() error {
 	if err := engine.LoadKills(context.Background()); err != nil {
 		return err
 	}
+	engine.SetDeniedHook(metrics.RecordDenied)
+	prometheus.MustRegister(metrics.NewBudgetCollector(engine))
 	logger.Info("budget enforcement ready", "budgets", len(cfg.Budgets))
 
 	recorder := func(rec proxy.RequestRecord) {
@@ -91,6 +97,7 @@ func run() error {
 			logger.Error("failed to persist usage record", "error", err)
 		}
 		engine.Record(rec.Agent, rec.Usage.InputTokens+rec.Usage.OutputTokens, record.CostUSD)
+		metrics.RecordRequest(rec, record.CostUSD)
 	}
 
 	// One proxy per configured provider; requests route by path below.
@@ -139,6 +146,9 @@ func run() error {
 		w.WriteHeader(http.StatusOK)
 		_, _ = fmt.Fprintln(w, "ok")
 	})
+	// /metrics is always-on and unauthenticated, like /healthz: platform teams
+	// scrape it into their existing Prometheus with zero custom config.
+	mux.Handle("GET /metrics", promhttp.Handler())
 	mux.Handle("GET /usage", wrap(api.UsageHandler(st)))
 
 	// Path-based provider routing keeps agents drop-in: OpenAI-style paths

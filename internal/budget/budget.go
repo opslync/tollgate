@@ -116,6 +116,16 @@ type Engine struct {
 	mu      sync.Mutex
 	budgets []*tracked
 	killed  map[string]bool
+
+	// deniedHook, when set, is called once per rejected request. It lets the
+	// metrics layer count denials without budget importing it (a cycle).
+	deniedHook func(agent auth.Agent, reason string)
+}
+
+// SetDeniedHook registers a callback invoked for each request the middleware
+// rejects (throttled/blocked/killed). Call before serving traffic.
+func (e *Engine) SetDeniedHook(fn func(agent auth.Agent, reason string)) {
+	e.deniedHook = fn
 }
 
 func New(st *store.Store, budgets []config.Budget, logger *slog.Logger) *Engine {
