@@ -287,6 +287,65 @@ providers:
 	}
 }
 
+func TestTracing(t *testing.T) {
+	cfg, err := Load(writeConfig(t, `
+server:
+  listen: ":8080"
+providers:
+  - name: anthropic
+    base_url: "https://api.anthropic.com"
+tracing:
+  enabled: true
+  otlp_endpoint: "http://otel-collector:4318/v1/traces"
+`))
+	if err != nil {
+		t.Fatalf("Load: %v", err)
+	}
+	if !cfg.Tracing.Enabled || cfg.Tracing.OTLPEndpoint != "http://otel-collector:4318/v1/traces" {
+		t.Errorf("tracing = %+v", cfg.Tracing)
+	}
+
+	// Disabled by default and endpoint may be absent.
+	off, err := Load(writeConfig(t, `
+server:
+  listen: ":8080"
+providers:
+  - name: anthropic
+    base_url: "https://api.anthropic.com"
+`))
+	if err != nil {
+		t.Fatalf("Load: %v", err)
+	}
+	if off.Tracing.Enabled {
+		t.Errorf("tracing enabled by default")
+	}
+}
+
+func TestTracingErrors(t *testing.T) {
+	base := `
+server:
+  listen: ":8080"
+providers:
+  - name: a
+    base_url: "https://x"
+`
+	tests := []struct {
+		name, extra, wantErr string
+	}{
+		{"enabled without endpoint", "tracing:\n  enabled: true\n", "requires tracing.otlp_endpoint"},
+		{"non-http scheme", "tracing:\n  enabled: true\n  otlp_endpoint: \"grpc://collector:4317\"\n", "must be http(s)"},
+		{"no host", "tracing:\n  enabled: true\n  otlp_endpoint: \"/v1/traces\"\n", "must be http(s)"},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			_, err := Load(writeConfig(t, base+tt.extra))
+			if err == nil || !strings.Contains(err.Error(), tt.wantErr) {
+				t.Errorf("err = %v, want containing %q", err, tt.wantErr)
+			}
+		})
+	}
+}
+
 func TestBudgetReferencesTeamsBlock(t *testing.T) {
 	// A budget may target a team declared only under teams:, with no agent
 	// carrying that team inline.
