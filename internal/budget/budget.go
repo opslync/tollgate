@@ -30,6 +30,27 @@ const (
 	BlockedKilled
 )
 
+// GaugeStateKind is a budget's current enforcement state as a single numeric
+// value, so a Grafana panel can render it with a 0-3 value mapping.
+type GaugeStateKind int
+
+const (
+	StateOK GaugeStateKind = iota
+	StateAlert
+	StateThrottled
+	StateBlocked
+)
+
+// GaugeState is a point-in-time snapshot of one budget (or one killed agent
+// without a backing budget), emitted by the Prometheus budget collector.
+type GaugeState struct {
+	Dimension string // "agent" | "team"
+	Target    string
+	State     GaugeStateKind
+	Ratio     float64
+	HasRatio  bool // false for a killed agent that has no budget to measure
+}
+
 // Decision is the enforcement outcome for one request.
 type Decision struct {
 	Kind        Kind
@@ -55,6 +76,22 @@ type tracked struct {
 
 func (t *tracked) usd() float64  { return t.baseUSD + t.deltaUSD }
 func (t *tracked) tokens() int64 { return t.baseTokens + t.deltaTokens }
+
+// ratio is the fraction of the budget consumed: the max over whichever limits
+// are set, so a budget with both a dollar and a token limit reports whichever
+// is closer to its cap.
+func (t *tracked) ratio() float64 {
+	var r float64
+	if t.cfg.LimitUSD > 0 {
+		r = t.usd() / t.cfg.LimitUSD
+	}
+	if t.cfg.LimitTokens > 0 {
+		if tr := float64(t.tokens()) / float64(t.cfg.LimitTokens); tr > r {
+			r = tr
+		}
+	}
+	return r
+}
 
 func (t *tracked) matches(a auth.Agent) bool {
 	return (t.dim == "agent" && t.value == a.Name) || (t.dim == "team" && t.value == a.Team)
@@ -194,6 +231,44 @@ func (e *Engine) Record(agent auth.Agent, tokens int64, usd float64) {
 			t.deltaTokens += tokens
 		}
 	}
+}
+
+// States returns a point-in-time snapshot of every budget's state plus any
+// killed agents that have no backing budget. It is a pure read under the same
+// lock the rest of the engine uses; counters are whatever the last refresh or
+// live increment left them at (no store round-trip on the scrape path).
+func (e *Engine) States() []GaugeState {
+	e.mu.Lock()
+	defer e.mu.Unlock()
+
+	out := make([]GaugeState, 0, len(e.budgets)+len(e.killed))
+	killedWithBudget := map[string]bool{}
+	for _, t := range e.budgets {
+		s := GaugeState{Dimension: t.dim, Target: t.value, Ratio: t.ratio(), HasRatio: true}
+		switch {
+		case t.dim == "agent" && e.killed[t.value]:
+			s.State = StateBlocked
+			killedWithBudget[t.value] = true
+		case t.over():
+			if t.cfg.Action == "throttle" {
+				s.State = StateThrottled
+			} else {
+				s.State = StateBlocked
+			}
+		case t.nearLimit():
+			s.State = StateAlert
+		default:
+			s.State = StateOK
+		}
+		out = append(out, s)
+	}
+	for agent := range e.killed {
+		if killedWithBudget[agent] {
+			continue
+		}
+		out = append(out, GaugeState{Dimension: "agent", Target: agent, State: StateBlocked})
+	}
+	return out
 }
 
 // Kill blocks all requests from the agent immediately and persists the
