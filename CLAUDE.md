@@ -59,19 +59,19 @@ Proxy implementation notes:
 
 ## Roadmap
 
-**Shipped (v0.1.0):**
-- **M1** ✅ (2026-07-05): transparent passthrough proxy to Anthropic; streaming included; per-request token usage logged to stdout.
-- **M2** ✅ (2026-07-05): agent identity via API keys + per-agent attribution; provider key injection.
-- **M3** ✅ (2026-07-05): SQLite metering + cost conversion (versioned pricing YAML) + `GET /usage`.
-- **M4** ✅ (2026-07-05): budgets with enforcement — alert / throttle / block — + kill switch.
-- **M5** ✅ (2026-07-05): OpenAI-compatible endpoint support (covers vLLM and most agent frameworks).
-- **M6** ✅ (2026-07-05): Helm chart + kind quickstart.
+**Shipped:**
+- **M1** ✅ (2026-07-05, v0.1.0): transparent passthrough proxy to Anthropic; streaming included; per-request token usage logged to stdout.
+- **M2** ✅ (2026-07-05, v0.1.0): agent identity via API keys + per-agent attribution; provider key injection.
+- **M3** ✅ (2026-07-05, v0.1.0): SQLite metering + cost conversion (versioned pricing YAML) + `GET /usage`.
+- **M4** ✅ (2026-07-05, v0.1.0): budgets with enforcement — alert / throttle / block — + kill switch.
+- **M5** ✅ (2026-07-05, v0.1.0): OpenAI-compatible endpoint support (covers vLLM and most agent frameworks).
+- **M6** ✅ (2026-07-05, v0.1.0): Helm chart + kind quickstart.
+- **M7** ✅ (2026-07-06, v0.2.0): Kubernetes-native identity & attribution. ServiceAccount-bound identity via TokenReview alongside static API keys; pod → namespace/deployment/ServiceAccount enrichment via a hand-rolled minimal K8s REST client (no client-go); namespace/label → team mapping; `GET /usage` grouping by team/deployment.
+- **M8** ✅ (2026-07-08, v0.3.0): Prometheus metrics + OTel export. `/metrics` (always-on, unauthenticated — per-agent/team token/cost counters, latency histogram, budget-state gauges); hand-rolled OTLP/HTTP+JSON trace export (no OTel SDK); Grafana dashboard JSON + `ServiceMonitor` in Helm; `docs/grafana.md` walkthrough.
 
 **Post-v0.1.0 sequencing** (adoption-led: meet platform teams where they are before building the hardest consumer — MCP enforcement — on top of a general policy engine):
 
 *Phase 2 — Kubernetes awareness*
-- **M7**: Kubernetes-native identity & attribution. ServiceAccount-bound identity (TokenReview/JWKS) alongside static API keys; pod → namespace/deployment/ServiceAccount enrichment via K8s API watch+cache; namespace/label → team mapping; `GET /usage` grouping by team/deployment.
-- **M8**: Prometheus metrics + OTel export. `/metrics` (per-agent/team token/cost counters, latency histograms, budget-state gauges); OTLP trace export per request; Grafana dashboard JSON + `ServiceMonitor` in Helm. Meets platform teams in Grafana instead of waiting on a dashboard.
 - **M9**: MCP passthrough + audit-only logging. Transparent proxy for MCP servers (Streamable HTTP/SSE); every tool call logged (agent, server, tool, args summary, status, latency) to the existing audit store; `GET /audit/tools`. No enforcement yet — plants the "we see every tool call" category flag ~2 quarters before M11.
 
 *Phase 3 — Policy engine*
