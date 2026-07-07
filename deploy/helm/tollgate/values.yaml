@@ -34,6 +34,15 @@ persistence:
   size: 1Gi
   storageClass: ""
 
+# ServiceMonitor for the Prometheus Operator (e.g. kube-prometheus-stack).
+# /metrics is always on (same port as the proxy, unauthenticated) — this only
+# wires up scraping. `labels` commonly needs release: <prometheus-release-name>
+# to match kube-prometheus-stack's default serviceMonitorSelector.
+serviceMonitor:
+  enabled: false
+  interval: 30s
+  labels: {}
+
 # Rendered verbatim into the ConfigMap as config.yaml — the full Tollgate
 # configuration (see config.example.yaml in the repo).
 config:
@@ -56,6 +65,11 @@ config:
   # Map namespaces to teams for attribution. A namespace's tollgate.io/team
   # label overrides this at runtime.
   teams: []
+  # OTLP/HTTP trace export: one span per proxied request, POSTed as JSON to
+  # a collector. Off by default; not every install runs one.
+  tracing:
+    enabled: false
+    otlp_endpoint: ""
 
 resources:
   requests:
