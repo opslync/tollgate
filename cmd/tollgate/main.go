@@ -27,6 +27,7 @@ import (
 	"github.com/opslync/tollgate/internal/metrics"
 	"github.com/opslync/tollgate/internal/proxy"
 	"github.com/opslync/tollgate/internal/store"
+	"github.com/opslync/tollgate/internal/trace"
 	"github.com/opslync/tollgate/pricing"
 )
 
@@ -72,6 +73,14 @@ func run() error {
 	prometheus.MustRegister(metrics.NewBudgetCollector(engine))
 	logger.Info("budget enforcement ready", "budgets", len(cfg.Budgets))
 
+	// Tracing is off by default; internal/trace stays inert (no goroutine, no
+	// dependency on a collector being reachable) unless configured.
+	var tracer *trace.Exporter
+	if cfg.Tracing.Enabled {
+		tracer = trace.NewExporter(cfg.Tracing.OTLPEndpoint, logger)
+		logger.Info("tracing enabled", "otlp_endpoint", cfg.Tracing.OTLPEndpoint)
+	}
+
 	recorder := func(rec proxy.RequestRecord) {
 		record := store.Record{
 			Time: rec.Time, Agent: rec.Agent.Name, Team: rec.Agent.Team,
@@ -98,6 +107,9 @@ func run() error {
 		}
 		engine.Record(rec.Agent, rec.Usage.InputTokens+rec.Usage.OutputTokens, record.CostUSD)
 		metrics.RecordRequest(rec, record.CostUSD)
+		if tracer != nil {
+			tracer.Export(rec, record.CostUSD)
+		}
 	}
 
 	// One proxy per configured provider; requests route by path below.
@@ -191,6 +203,9 @@ func run() error {
 	if cfg.Kubernetes.Enabled {
 		go podCache.Run(ctx, logger)
 		go teamMap.Run(ctx, time.Duration(cfg.Kubernetes.PollInterval), logger)
+	}
+	if tracer != nil {
+		go tracer.Run(ctx)
 	}
 
 	errCh := make(chan error, 1)
