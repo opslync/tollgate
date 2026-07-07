@@ -88,16 +88,36 @@ func floatAttr(key string, value float64) attribute {
 }
 
 // buildSpan turns one completed request into a single-span OTLP export
-// request. Every request is a root span: Tollgate does not read or
-// propagate an incoming trace context.
+// request. Convenience wrapper around newSpan/wrapSpans for callers (and
+// tests) that only ever need one span per request.
 func buildSpan(rec proxy.RequestRecord, costUSD float64) (exportRequest, error) {
+	s, err := newSpan(rec, costUSD)
+	if err != nil {
+		return exportRequest{}, err
+	}
+	return wrapSpans([]span{s}), nil
+}
+
+// wrapSpans wraps a batch of already-built spans in the OTLP resource/scope
+// envelope the collector expects. Used directly by the batching exporter,
+// which builds many spans before a single POST.
+func wrapSpans(spans []span) exportRequest {
+	return exportRequest{ResourceSpans: []resourceSpans{{
+		Resource:   resource{Attributes: []attribute{strAttr("service.name", "tollgate")}},
+		ScopeSpans: []scopeSpans{{Scope: scope{Name: "github.com/opslync/tollgate"}, Spans: spans}},
+	}}}
+}
+
+// newSpan turns one completed request into a span. Every request is a root
+// span: Tollgate does not read or propagate an incoming trace context.
+func newSpan(rec proxy.RequestRecord, costUSD float64) (span, error) {
 	traceID, err := newTraceID()
 	if err != nil {
-		return exportRequest{}, fmt.Errorf("generate trace id: %w", err)
+		return span{}, fmt.Errorf("generate trace id: %w", err)
 	}
 	spanID, err := newSpanID()
 	if err != nil {
-		return exportRequest{}, fmt.Errorf("generate span id: %w", err)
+		return span{}, fmt.Errorf("generate span id: %w", err)
 	}
 
 	start := rec.Time
@@ -136,8 +156,5 @@ func buildSpan(rec proxy.RequestRecord, costUSD float64) (exportRequest, error) 
 		s.Status = &status{Code: statusCodeError}
 	}
 
-	return exportRequest{ResourceSpans: []resourceSpans{{
-		Resource:   resource{Attributes: []attribute{strAttr("service.name", "tollgate")}},
-		ScopeSpans: []scopeSpans{{Scope: scope{Name: "github.com/opslync/tollgate"}, Spans: []span{s}}},
-	}}}, nil
+	return s, nil
 }
