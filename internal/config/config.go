@@ -20,6 +20,17 @@ type Config struct {
 	Budgets    []Budget   `yaml:"budgets"`
 	Kubernetes Kubernetes `yaml:"kubernetes"`
 	Teams      []Team     `yaml:"teams"`
+	Tracing    Tracing    `yaml:"tracing"`
+}
+
+// Tracing enables OTLP/HTTP JSON trace export: one span per proxied request,
+// POSTed to a collector. Off by default so non-observability installs stay
+// zero-dependency. TLS vs plaintext is determined by the endpoint URL scheme.
+type Tracing struct {
+	Enabled bool `yaml:"enabled"`
+	// OTLPEndpoint is the full traces URL incl. path, e.g.
+	// http://otel-collector:4318/v1/traces.
+	OTLPEndpoint string `yaml:"otlp_endpoint"`
 }
 
 // Kubernetes enables in-cluster identity: agent pods are attributed from their
@@ -256,6 +267,18 @@ func (c *Config) validate() error {
 		}
 		if b.Action != "" && b.Action != "block" && b.Action != "throttle" {
 			return fmt.Errorf("budgets[%d] (%s): action must be block or throttle, got %q", i, b.target(), b.Action)
+		}
+	}
+	if c.Tracing.Enabled {
+		if c.Tracing.OTLPEndpoint == "" {
+			return fmt.Errorf("tracing.enabled requires tracing.otlp_endpoint")
+		}
+		u, err := url.Parse(c.Tracing.OTLPEndpoint)
+		if err != nil {
+			return fmt.Errorf("tracing.otlp_endpoint invalid: %w", err)
+		}
+		if (u.Scheme != "http" && u.Scheme != "https") || u.Host == "" {
+			return fmt.Errorf("tracing.otlp_endpoint must be http(s)://host[:port]/path, got %q", c.Tracing.OTLPEndpoint)
 		}
 	}
 	return nil

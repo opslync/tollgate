@@ -16,13 +16,18 @@ import (
 	"syscall"
 	"time"
 
+	"github.com/prometheus/client_golang/prometheus"
+	"github.com/prometheus/client_golang/prometheus/promhttp"
+
 	"github.com/opslync/tollgate/internal/api"
 	"github.com/opslync/tollgate/internal/auth"
 	"github.com/opslync/tollgate/internal/budget"
 	"github.com/opslync/tollgate/internal/config"
 	"github.com/opslync/tollgate/internal/k8s"
+	"github.com/opslync/tollgate/internal/metrics"
 	"github.com/opslync/tollgate/internal/proxy"
 	"github.com/opslync/tollgate/internal/store"
+	"github.com/opslync/tollgate/internal/trace"
 	"github.com/opslync/tollgate/pricing"
 )
 
@@ -64,7 +69,17 @@ func run() error {
 	if err := engine.LoadKills(context.Background()); err != nil {
 		return err
 	}
+	engine.SetDeniedHook(metrics.RecordDenied)
+	prometheus.MustRegister(metrics.NewBudgetCollector(engine))
 	logger.Info("budget enforcement ready", "budgets", len(cfg.Budgets))
+
+	// Tracing is off by default; internal/trace stays inert (no goroutine, no
+	// dependency on a collector being reachable) unless configured.
+	var tracer *trace.Exporter
+	if cfg.Tracing.Enabled {
+		tracer = trace.NewExporter(cfg.Tracing.OTLPEndpoint, logger)
+		logger.Info("tracing enabled", "otlp_endpoint", cfg.Tracing.OTLPEndpoint)
+	}
 
 	recorder := func(rec proxy.RequestRecord) {
 		record := store.Record{
@@ -91,6 +106,10 @@ func run() error {
 			logger.Error("failed to persist usage record", "error", err)
 		}
 		engine.Record(rec.Agent, rec.Usage.InputTokens+rec.Usage.OutputTokens, record.CostUSD)
+		metrics.RecordRequest(rec, record.CostUSD)
+		if tracer != nil {
+			tracer.Export(rec, record.CostUSD)
+		}
 	}
 
 	// One proxy per configured provider; requests route by path below.
@@ -139,6 +158,9 @@ func run() error {
 		w.WriteHeader(http.StatusOK)
 		_, _ = fmt.Fprintln(w, "ok")
 	})
+	// /metrics is always-on and unauthenticated, like /healthz: platform teams
+	// scrape it into their existing Prometheus with zero custom config.
+	mux.Handle("GET /metrics", promhttp.Handler())
 	mux.Handle("GET /usage", wrap(api.UsageHandler(st)))
 
 	// Path-based provider routing keeps agents drop-in: OpenAI-style paths
@@ -181,6 +203,9 @@ func run() error {
 	if cfg.Kubernetes.Enabled {
 		go podCache.Run(ctx, logger)
 		go teamMap.Run(ctx, time.Duration(cfg.Kubernetes.PollInterval), logger)
+	}
+	if tracer != nil {
+		go tracer.Run(ctx)
 	}
 
 	errCh := make(chan error, 1)

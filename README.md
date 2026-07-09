@@ -139,6 +139,8 @@ curl "http://localhost:8080/usage" -H "x-api-key: $ANTHROPIC_API_KEY"
 
 In production, agents in the cluster point at `http://tollgate.<namespace>.svc:8080` and the chart's `persistence.enabled=true` keeps usage history and kill-switch state across restarts.
 
+`/metrics` is always on for Prometheus scraping — see [docs/grafana.md](docs/grafana.md) for wiring it into an existing Grafana in about 10 minutes.
+
 ## Roadmap
 
 | Milestone | Scope |
