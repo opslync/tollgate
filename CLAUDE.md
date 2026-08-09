@@ -59,6 +59,8 @@ Proxy implementation notes:
 
 ## Roadmap
 
+Versioning: one milestone = one release, tags are immutable once announced. `v0.1.0` = M1–M6, `v0.2.0` = M7, `v0.3.0` = M8. Next milestone (M9) ships as `v0.4.0`.
+
 **Shipped:**
 - **M1** ✅ (2026-07-05, v0.1.0): transparent passthrough proxy to Anthropic; streaming included; per-request token usage logged to stdout.
 - **M2** ✅ (2026-07-05, v0.1.0): agent identity via API keys + per-agent attribution; provider key injection.
