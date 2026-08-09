@@ -19,6 +19,16 @@ unattributed. Add agents (and budgets) under .Values.config.
 NOTE: persistence is disabled; usage history and kill-switch state are lost
 when the pod restarts. Set persistence.enabled=true for real deployments.
 {{- end }}
+{{- if and .Values.serviceMonitor.enabled (not .Values.serviceMonitor.prometheusRelease) (not (hasKey .Values.serviceMonitor.labels "release")) }}
+
+WARNING: serviceMonitor.enabled is true but serviceMonitor.prometheusRelease
+is unset. kube-prometheus-stack's default Prometheus only scrapes
+ServiceMonitors labeled release: <its helm release name> — without it this
+ServiceMonitor is created but never selected, and Grafana panels stay empty
+with no error anywhere. Set:
+
+  --set serviceMonitor.prometheusRelease=<your prometheus release name>
+{{- end }}
 {{- if .Values.config.kubernetes.enabled }}
 
 Kubernetes-native identity is ON: agent pods are attributed by their

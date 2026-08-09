@@ -36,11 +36,18 @@ persistence:
 
 # ServiceMonitor for the Prometheus Operator (e.g. kube-prometheus-stack).
 # /metrics is always on (same port as the proxy, unauthenticated) — this only
-# wires up scraping. `labels` commonly needs release: <prometheus-release-name>
-# to match kube-prometheus-stack's default serviceMonitorSelector.
+# wires up scraping.
+#
+# prometheusRelease is almost always required: kube-prometheus-stack's default
+# serviceMonitorSelector only matches ServiceMonitors labeled
+# release: <the helm release name you installed prometheus as> (e.g. "prom"
+# for `helm install prom prometheus-community/kube-prometheus-stack`). Leaving
+# it unset when enabled=true renders a ServiceMonitor Prometheus will silently
+# never select — helm install prints a warning if you do this.
 serviceMonitor:
   enabled: false
   interval: 30s
+  prometheusRelease: ""
   labels: {}
 
 # Rendered verbatim into the ConfigMap as config.yaml — the full Tollgate

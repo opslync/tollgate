@@ -1,0 +1,45 @@
+# Demo values for the Grafana walkthrough (docs/grafana.md) — NOT for
+# production installs. Chart defaults ship agents: [] and budgets: [] so a
+# fresh production release never carries baked-in credentials; that also
+# means a default install's Grafana dashboard has nothing to show (see
+# github.com/opslync/tollgate/issues/11). This file adds two demo agents with
+# budgets, so every dashboard panel populates: one with headroom for steady
+# "healthy" traffic, one with a tight budget that hard-blocks quickly to
+# exercise the Denied-requests and Budget-state panels too.
+#
+# For a fully zero-dependency demo (no real provider key needed), pair this
+# with the mock upstream at deploy/compose/mock — build/push its image and
+# point providers[0].base_url at it, the same way deploy/compose does.
+#
+# Usage:
+#   helm install tollgate deploy/helm/tollgate -f values-demo.yaml \
+#     --set config.providers[0].api_key=$ANTHROPIC_API_KEY
+
+serviceMonitor:
+  enabled: true
+  # Required for kube-prometheus-stack to actually scrape this — see
+  # docs/grafana.md and the NOTES.txt warning if you skip it.
+  prometheusRelease: "prom"
+
+config:
+  agents:
+    - name: checkout-agent
+      key: "tg_demo_checkout_0123456789ab"
+      team: payments
+      namespace: prod
+    - name: reports-agent
+      key: "tg_demo_reports_0123456789abc"
+      team: analytics
+      namespace: prod
+
+  budgets:
+    - agent: checkout-agent
+      window: 30m
+      limit_usd: 0.50
+      alert_at: 0.8
+      action: block
+    - agent: reports-agent
+      window: 30m
+      limit_usd: 0.003
+      alert_at: 0.5
+      action: block

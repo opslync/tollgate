@@ -1,0 +1,41 @@
+# Tollgate config for the docker-compose demo. Points at the bundled mock
+# Anthropic upstream (deploy/compose/mock) so the quickstart needs no API key.
+# To run against the real API instead: change base_url to
+# https://api.anthropic.com and api_key to ${ANTHROPIC_API_KEY}.
+server:
+  listen: ":8080"
+  admin_key: "adm_demo_0123456789abcdef"
+
+storage:
+  path: "/data/tollgate.db"
+
+providers:
+  - name: anthropic
+    base_url: "http://mock-anthropic:9911"
+    api_key: "sk-ant-demo-provider-key"
+
+# Two agents so every Grafana panel has something to show on first run:
+# checkout-agent has headroom and generates steady "healthy" traffic;
+# reports-agent has a tight budget and trips into a hard block quickly,
+# so the Denied-requests and Budget-state panels aren't empty either.
+agents:
+  - name: checkout-agent
+    key: "tg_demo_checkout_0123456789ab"
+    team: payments
+    namespace: prod
+  - name: reports-agent
+    key: "tg_demo_reports_0123456789abc"
+    team: analytics
+    namespace: prod
+
+budgets:
+  - agent: checkout-agent
+    window: 30m
+    limit_usd: 0.50
+    alert_at: 0.8
+    action: block
+  - agent: reports-agent
+    window: 30m
+    limit_usd: 0.003
+    alert_at: 0.5
+    action: block

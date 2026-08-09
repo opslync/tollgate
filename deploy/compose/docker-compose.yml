@@ -1,0 +1,44 @@
+services:
+  mock-anthropic:
+    build: ./mock
+    restart: unless-stopped
+
+  tollgate:
+    build:
+      context: ../..
+      dockerfile: Dockerfile
+    depends_on:
+      - mock-anthropic
+    ports:
+      - "8080:8080"
+    volumes:
+      - ./demo-config.yaml:/etc/tollgate/config.yaml:ro
+    tmpfs:
+      - /data:uid=65532,gid=65532
+    restart: unless-stopped
+
+  prometheus:
+    image: prom/prometheus:v2.55.1
+    depends_on:
+      - tollgate
+    ports:
+      - "9090:9090"
+    volumes:
+      - ./prometheus/prometheus.yml:/etc/prometheus/prometheus.yml:ro
+    restart: unless-stopped
+
+  grafana:
+    image: grafana/grafana:11.3.1
+    depends_on:
+      - prometheus
+    ports:
+      - "3000:3000"
+    environment:
+      - GF_SECURITY_ADMIN_USER=admin
+      - GF_SECURITY_ADMIN_PASSWORD=admin
+      - GF_AUTH_ANONYMOUS_ENABLED=true
+      - GF_AUTH_ANONYMOUS_ORG_ROLE=Viewer
+    volumes:
+      - ./grafana/provisioning:/etc/grafana/provisioning:ro
+      - ./grafana/dashboards/tollgate-dashboard.json:/var/lib/grafana/dashboards/tollgate-dashboard.json:ro
+    restart: unless-stopped

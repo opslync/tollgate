@@ -2,6 +2,8 @@
 
 `/metrics` is always on — no config needed, same port as the proxy, unauthenticated like `/healthz`. This walks through wiring it into a Prometheus Operator setup (e.g. [kube-prometheus-stack](https://github.com/prometheus-community/helm-charts/tree/main/charts/kube-prometheus-stack)) and importing the shipped dashboard.
 
+Want this running in one command with no cluster and no API key? See the [docker-compose quickstart](../deploy/compose/) instead — it's the fastest way to see every panel populated.
+
 ## Prereqs
 
 - Tollgate installed via the [kind quickstart](../README.md#kubernetes-kind-quickstart) (or any cluster with the Helm chart installed).
@@ -15,12 +17,12 @@
 
 ## 1. Turn on the ServiceMonitor
 
-The **#1 "no data" gotcha**: kube-prometheus-stack's Prometheus only scrapes ServiceMonitors matching its `serviceMonitorSelector` — by default, ones labeled `release: <the helm release name you installed prometheus as>`. Set that label when you enable the toggle:
+The **#1 "no data" gotcha**: kube-prometheus-stack's Prometheus only scrapes ServiceMonitors matching its `serviceMonitorSelector` — by default, ones labeled `release: <the helm release name you installed prometheus as>`. Set `prometheusRelease` when you enable the toggle — the chart maps it straight to that label, and `helm install` prints a warning if you forget it:
 
 ```sh
 helm upgrade tollgate deploy/helm/tollgate -f my-values.yaml \
   --set serviceMonitor.enabled=true \
-  --set serviceMonitor.labels.release=prom
+  --set serviceMonitor.prometheusRelease=prom
 ```
 
 (`prom` matches the `helm install prom ...` above — use whatever release name you actually used.)
@@ -42,6 +44,15 @@ In Grafana: **Dashboards → New → Import**, upload [`deploy/grafana/tollgate-
 ## 4. What "done" looks like
 
 Send a request or two through Tollgate, then watch the **Spend by agent** panel — it should populate within one scrape interval (30s by default). The other panels (requests/sec, tokens in/out, budget consumed %, budget state, p95 latency, denied requests) follow the same pattern: `sum by (agent) (...)` queries over the metrics Tollgate exposes.
+
+![Tollgate dashboard in Grafana: spend, requests/sec, and tokens by agent; budget-consumed gauges and a budget-state timeline going OK -> Alert -> Blocked; p95 latency; denied requests climbing](img/grafana-dashboard.png)
+
+With the chart's production defaults (`agents: []`, `budgets: []`) most panels have nothing to group by, so a first install can look broken even though scraping is working fine. [`values-demo.yaml`](../deploy/helm/tollgate/values-demo.yaml) configures two demo agents/budgets specifically so every panel — including budget state and denied requests, which need an agent to actually hit a budget — has something to show:
+
+```sh
+helm install tollgate deploy/helm/tollgate -f deploy/helm/tollgate/values-demo.yaml \
+  --set config.providers[0].api_key=$ANTHROPIC_API_KEY
+```
 
 ## Optional: OTLP trace export
 

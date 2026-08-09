@@ -1,0 +1,7 @@
+global:
+  scrape_interval: 5s
+
+scrape_configs:
+  - job_name: tollgate
+    static_configs:
+      - targets: ["tollgate:8080"]
