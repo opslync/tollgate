@@ -195,7 +195,7 @@ In production, agents in the cluster point at `http://tollgate.<namespace>.svc:8
 | 11 | MCP tool-call enforcement — allow-lists, deny-by-default, approval gates |
 | 12 | Audit export & compliance pack |
 
-Full scope and sequencing rationale in [`CLAUDE.md`](CLAUDE.md#roadmap); tracked issues on the [milestones page](https://github.com/opslync/tollgate/milestones).
+Full scope and sequencing rationale in [`ROADMAP.md`](ROADMAP.md); tracked issues on the [milestones page](https://github.com/opslync/tollgate/milestones).
 
 ## License
 
