@@ -6,7 +6,7 @@
 
 ![Tollgate demo: a request is attributed to an agent, a tiny budget alerts then hard-blocks with a 403, and the kill switch cuts the agent off mid-incident](deploy/compose/demo.gif)
 
-**See, budget, and control every token your AI agents spend — inside your own cluster.**
+**Your agents have no spending limit, no audit trail, and nothing stopping them from calling AWS at 3am. Tollgate fixes that.**
 
 An agent with an API key can spend without limit and without anyone noticing until the invoice arrives. Multiply that by every agent, every team, every namespace in the cluster, and "who spent what" becomes a question nobody can answer in real time — usually you find out from the bill, not from a dashboard, and by then the runaway loop has been running for hours. Tollgate sits between your agents and the LLM APIs they call, so every request is attributed to an identity the moment it happens, every budget is enforced before the next token is spent, and a kill switch stops a specific agent in milliseconds — not at the next billing cycle.
 
@@ -24,11 +24,9 @@ Grafana's at `localhost:3000` (admin/admin) with the dashboard already loaded. S
 
 ## What it does
 
-- **Attribution** — every request is tagged with an agent identity (API key, or ServiceAccount-bound identity in Kubernetes — no key needed). Token usage is parsed from provider responses and attributed to agent, team, and namespace.
+- **Attribution** — every request is tagged with an agent identity (API key, or ServiceAccount-bound identity in Kubernetes — no key needed). A key can be copied, shared, or pasted into a notebook; in Kubernetes, identity comes from the pod's ServiceAccount instead — the platform team controls the binding, and an agent can't claim to be a different one.
 - **Budgets with real-time enforcement** — not retrospective reporting. Per-agent or per-team token/dollar budgets: alert at threshold, throttle or hard-block at limit, and a kill switch that stops a runaway agent loop in seconds.
 - **Audit** — every LLM call (and later, MCP tool call) logged: agent, model, tokens, cost, latency, status, timestamp.
-
-Cost governance is the wedge; MCP tool-call policy (allow-lists, deny-by-default) rides on the same chassis later.
 
 ## See it in Grafana
 
@@ -48,10 +46,10 @@ Single Go binary, three middleware stages, SQLite for storage. Full request-flow
 |---|---|---|---|---|
 | Primary job | Governance: attribute, budget, block | Routing, fallback, caching across providers | See what happened after the fact | See what you were billed after the fact |
 | Runs where | In your cluster, your data never leaves | Usually your infra | Usually their SaaS | Vendor's cloud |
-| Per-agent/team attribution | Yes — API key or K8s ServiceAccount identity | Via API keys | Via SDK-side tagging | No — account-level only |
-| Real-time hard enforcement | Yes — block/throttle before the next token is spent | Varies by setup | No — observability only | No — hours-delayed at best |
-| Kill switch | Yes, sub-second, survives restarts | No | No | No |
-| MCP tool-call governance | Roadmapped (allow-lists, deny-by-default) | No | No | No |
+| Per-agent/team attribution | K8s ServiceAccount identity — bound to the workload, not a copyable key | Virtual API keys | Via SDK-side tagging | No — account-level only |
+| Real-time hard enforcement | Yes | Yes | No — observability only | No — hours-delayed at best |
+| Kill switch | Yes — targeted, sub-second, survives restarts | Key blocking | No | No |
+| MCP tool-call governance | Roadmapped | Yes, per-key/team allow-lists | No | No |
 | Install | Single static binary + SQLite | Varies | Hosted signup | N/A |
 
 Tollgate deliberately doesn't do model routing, fallback, or caching — that's the gateways' fight, and mixing it in dilutes what Tollgate is actually for.

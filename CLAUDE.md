@@ -13,8 +13,9 @@
 
 - **Telemetry decision** — anonymous version ping + disclosure + opt-out, vs. proxy metrics (ghcr pulls, docs analytics) with lower-confidence install targets. Founder call, not yet made.
 - **`docs/PLAN-90DAY.md`** — not yet committed. The 90-day execution plan exists in a separate strategy conversation; needs to be pasted in and committed before Claude Code can build against it.
-- **M9** (MCP passthrough + audit-only logging) — not started, no tracking issue yet.
-- **[#12](https://github.com/opslync/tollgate/issues/12)** — OTLP trace export has unit-test coverage but has never been pointed at a real collector. Not launch-blocking.
+- **M9** (MCP passthrough + audit-only logging) — not started. Tracking issue: [#16](https://github.com/opslync/tollgate/issues/16).
+- **[#12](https://github.com/opslync/tollgate/issues/12)** — OTLP trace export has unit-test coverage but has never been pointed at a real collector. Not launch-blocking. Labeled `good first issue`, along with [#13](https://github.com/opslync/tollgate/issues/13), [#14](https://github.com/opslync/tollgate/issues/14), [#15](https://github.com/opslync/tollgate/issues/15).
+- GitHub Discussions enabled.
 
 ## What Tollgate is
 
