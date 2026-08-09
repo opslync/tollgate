@@ -1,0 +1,70 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1000 440" font-family="'SF Mono', 'Menlo', 'Consolas', monospace">
+  <rect x="0" y="0" width="1000" height="440" rx="12" fill="#ffffff" stroke="#e2e2e2"/>
+
+  <!-- Agent -->
+  <rect x="30" y="150" width="140" height="80" rx="8" fill="#f5f7fa" stroke="#8892a0" stroke-width="1.5"/>
+  <text x="100" y="185" text-anchor="middle" font-size="16" font-weight="600" fill="#1a1a2e">Agent</text>
+  <text x="100" y="205" text-anchor="middle" font-size="11" fill="#5a6472">Tollgate key</text>
+
+  <line x1="170" y1="190" x2="212" y2="190" stroke="#8892a0" stroke-width="1.5" marker-end="url(#arrow)"/>
+
+  <!-- Tollgate pipeline -->
+  <rect x="215" y="110" width="560" height="160" rx="10" fill="#eef4ff" stroke="#3b5bdb" stroke-width="1.5"/>
+  <text x="495" y="135" text-anchor="middle" font-size="15" font-weight="700" fill="#1a2b6d">Tollgate</text>
+
+  <rect x="240" y="155" width="140" height="80" rx="7" fill="#ffffff" stroke="#3b5bdb"/>
+  <text x="310" y="188" text-anchor="middle" font-size="13" font-weight="600" fill="#1a2b6d">Auth</text>
+  <text x="310" y="206" text-anchor="middle" font-size="10.5" fill="#4a5578">key -&gt; agent</text>
+  <text x="310" y="220" text-anchor="middle" font-size="10.5" fill="#4a5578">or 401</text>
+
+  <line x1="380" y1="195" x2="410" y2="195" stroke="#3b5bdb" stroke-width="1.5" marker-end="url(#arrowblue)"/>
+
+  <rect x="413" y="155" width="150" height="80" rx="7" fill="#ffffff" stroke="#3b5bdb"/>
+  <text x="488" y="181" text-anchor="middle" font-size="13" font-weight="600" fill="#1a2b6d">Budget</text>
+  <text x="488" y="199" text-anchor="middle" font-size="10.5" fill="#4a5578">allow / throttle</text>
+  <text x="488" y="213" text-anchor="middle" font-size="10.5" fill="#4a5578">/ block / killed</text>
+
+  <line x1="563" y1="195" x2="593" y2="195" stroke="#3b5bdb" stroke-width="1.5" marker-end="url(#arrowblue)"/>
+
+  <rect x="596" y="155" width="150" height="80" rx="7" fill="#ffffff" stroke="#3b5bdb"/>
+  <text x="671" y="188" text-anchor="middle" font-size="13" font-weight="600" fill="#1a2b6d">Proxy</text>
+  <text x="671" y="206" text-anchor="middle" font-size="10.5" fill="#4a5578">swap key, stream,</text>
+  <text x="671" y="220" text-anchor="middle" font-size="10.5" fill="#4a5578">meter response</text>
+
+  <line x1="775" y1="190" x2="817" y2="190" stroke="#8892a0" stroke-width="1.5" marker-end="url(#arrow)"/>
+
+  <!-- Upstream -->
+  <rect x="820" y="140" width="150" height="100" rx="8" fill="#f5f7fa" stroke="#8892a0" stroke-width="1.5"/>
+  <text x="895" y="175" text-anchor="middle" font-size="14" font-weight="600" fill="#1a1a2e">Upstream</text>
+  <text x="895" y="195" text-anchor="middle" font-size="10.5" fill="#5a6472">Anthropic /</text>
+  <text x="895" y="210" text-anchor="middle" font-size="10.5" fill="#5a6472">OpenAI-compat /</text>
+  <text x="895" y="225" text-anchor="middle" font-size="10.5" fill="#5a6472">vLLM</text>
+
+  <!-- 429/403 short-circuit note -->
+  <text x="495" y="290" text-anchor="middle" font-size="11" fill="#a83232">throttle (429) / block (403) / killed (403) short-circuits before the proxy — nothing reaches upstream</text>
+
+  <!-- Down arrow to observability -->
+  <line x1="495" y1="270" x2="495" y2="330" stroke="#3b5bdb" stroke-width="1.5" marker-end="url(#arrowblue)"/>
+
+  <!-- Observability row -->
+  <rect x="90" y="335" width="230" height="70" rx="8" fill="#f5f7fa" stroke="#8892a0" stroke-width="1.5"/>
+  <text x="205" y="362" text-anchor="middle" font-size="12.5" font-weight="600" fill="#1a1a2e">SQLite</text>
+  <text x="205" y="380" text-anchor="middle" font-size="10.5" fill="#5a6472">usage, audit, kill state</text>
+
+  <rect x="385" y="335" width="230" height="70" rx="8" fill="#f5f7fa" stroke="#8892a0" stroke-width="1.5"/>
+  <text x="500" y="362" text-anchor="middle" font-size="12.5" font-weight="600" fill="#1a1a2e">/metrics</text>
+  <text x="500" y="380" text-anchor="middle" font-size="10.5" fill="#5a6472">Prometheus -&gt; Grafana</text>
+
+  <rect x="680" y="335" width="230" height="70" rx="8" fill="#f5f7fa" stroke="#8892a0" stroke-width="1.5"/>
+  <text x="795" y="362" text-anchor="middle" font-size="12.5" font-weight="600" fill="#1a1a2e">OTLP traces</text>
+  <text x="795" y="380" text-anchor="middle" font-size="10.5" fill="#5a6472">fire-and-forget export</text>
+
+  <defs>
+    <marker id="arrow" markerWidth="8" markerHeight="8" refX="6" refY="4" orient="auto">
+      <path d="M0,0 L8,4 L0,8 Z" fill="#8892a0"/>
+    </marker>
+    <marker id="arrowblue" markerWidth="8" markerHeight="8" refX="6" refY="4" orient="auto">
+      <path d="M0,0 L8,4 L0,8 Z" fill="#3b5bdb"/>
+    </marker>
+  </defs>
+</svg>
