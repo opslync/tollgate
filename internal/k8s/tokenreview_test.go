@@ -11,7 +11,7 @@ import (
 // fakeClient points a Client at a test server with no token auth.
 func fakeClient(t *testing.T, srv *httptest.Server) *Client {
 	t.Helper()
-	return &Client{baseURL: srv.URL, http: srv.Client()}
+	return NewClientForURL(srv.URL, srv.Client())
 }
 
 // tokenReviewServer answers TokenReview POSTs from a token→status table.

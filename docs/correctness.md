@@ -49,6 +49,32 @@ guarantee that quietly isn't one.
 | D2 | Cost is computed server-side from parsed response usage and the embedded pricing table. | Yes | — | `TestCorrectness_ClientCannotLowerRecordedCost` (`cmd/tollgate/attribution_correctness_test.go`) |
 | D3 | Concurrent requests from different agents never bleed into each other's totals. | Yes | — | `TestCorrectness_ConcurrentAgentsAttributeIndependently` (`cmd/tollgate/attribution_correctness_test.go`) |
 
+### E — identity integrity (Kubernetes ServiceAccount authentication)
+
+Group D covers static keys: a key is a string, and a string can be copied.
+Tollgate's actual claim is stronger — in Kubernetes mode, an agent's identity is
+the ServiceAccount token the kubelet projected into its pod, so attribution is
+bound to the workload rather than to a secret anyone holding it can present.
+That claim is only worth making if a pod cannot wear another pod's identity, and
+it was the one property the first pass of this suite did not test.
+
+Where the trust sits: Tollgate validates no signatures itself. It asks the API
+server via TokenReview, and treats `authenticated: false` as final. Pod name and
+UID come only from the `authentication.kubernetes.io/pod-*` extras the API
+server sets for a genuinely bound token — nothing client-supplied reaches an
+identity. These tests exercise that whole chain (`Authenticator` → `PodCache` →
+`Resolver` → `auth` middleware → proxy → SQLite) against a fake API server, not
+a stub in place of the resolver.
+
+| ID | Invariant | Holds | Bound if not | Test |
+|---|---|---|---|---|
+| E1 | A token that does not authenticate — forged, expired, or an authenticated non-ServiceAccount principal — never produces an identity, never reaches the upstream, and is never recorded or billed. | Yes | — | `TestCorrectness_UnauthenticatedTokenFailsClosed` (`cmd/tollgate/identity_correctness_test.go`) |
+| E2 | A pod authenticated by its own ServiceAccount token is never attributed as a different pod, ServiceAccount, or workload — including under concurrent, interleaved use of several pods' tokens. | Yes | — | `TestCorrectness_TokenSubstitutionCannotCrossAttribute` (`cmd/tollgate/identity_correctness_test.go`) |
+| E3 | No client-supplied header can inject or override pod, ServiceAccount, namespace, or workload attribution when identity comes from a ServiceAccount token. | Yes | — | `TestCorrectness_HeadersCannotInjectWorkloadIdentity` (`cmd/tollgate/identity_correctness_test.go`) |
+
+All three hold. One deliberate behaviour is worth knowing about even though it
+is not a hole in them: see [Identity without a pod](#identity-without-a-pod).
+
 ## The limitations, in detail
 
 ### Budget overshoot
@@ -111,6 +137,26 @@ entirely (which undercounts strictly more, and lets an agent evade its budget by
 hanging up mid-stream) or guessing at the output tokens (which invents money you
 cannot reconcile against a provider invoice).
 
+### Identity without a pod
+
+**An authenticated ServiceAccount token with no pod binding is attributed at
+ServiceAccount level, not rejected.**
+
+Two cases produce an identity with no workload attached: a token that is not a
+bound projected token (so the API server reports no pod extras), and a bound
+token whose pod has not yet appeared in the pod cache — the cache is a periodic
+list, so a pod can send its first request before the next poll. In both, the
+request is attributed to `<namespace>/<serviceaccount>` with the pod, workload
+kind and workload name left empty.
+
+This is enrichment failing, not authentication failing, and the two are kept
+separate on purpose: the caller is still a principal the API server vouched for,
+so refusing it would drop real spend on the floor rather than record it slightly
+coarser. The security property is unaffected — the namespace and ServiceAccount
+still come from TokenReview, and the empty fields stay empty rather than being
+filled in from anything the client sent. What it costs is resolution: spend from
+a cold-cache pod lands on the ServiceAccount's line rather than its Deployment's.
+
 ### Telling a flagged $0 apart from a real $0
 
 Every stored request carries a `usage_status`:
@@ -132,6 +178,11 @@ Each one corresponds to a publicly documented failure in a competing system —
 LiteLLM issues #27704, #27639, #31441, #35766, #35906, #36083, and the reviewer
 warnings on PRs #35854/#35886/#35887. These are failure modes that have cost
 someone real money in production, not hypothetical edge cases.
+
+Group E is the exception, and came from a review of this page rather than from
+someone else's outage: everything above tests the numbers, and nothing tested
+the identity those numbers hang off. A spend figure attributed to the wrong
+workload is wrong no matter how carefully it was metered.
 
 Three bugs were found and fixed while writing this suite:
 

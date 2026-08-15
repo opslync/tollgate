@@ -50,16 +50,26 @@ func NewClient() (*Client, error) {
 	if !pool.AppendCertsFromPEM(ca) {
 		return nil, fmt.Errorf("cluster CA at %s is not valid PEM", caPath)
 	}
-	return &Client{
-		baseURL: "https://" + net.JoinHostPort(host, port),
-		http: &http.Client{
-			Timeout: 10 * time.Second,
-			Transport: &http.Transport{
-				TLSClientConfig: &tls.Config{RootCAs: pool, MinVersion: tls.VersionTLS12},
-			},
+	c := NewClientForURL("https://"+net.JoinHostPort(host, port), &http.Client{
+		Timeout: 10 * time.Second,
+		Transport: &http.Transport{
+			TLSClientConfig: &tls.Config{RootCAs: pool, MinVersion: tls.VersionTLS12},
 		},
-		tokenPath: tokenPath,
-	}, nil
+	})
+	c.tokenPath = tokenPath
+	return c, nil
+}
+
+// NewClientForURL builds a client against an explicit API-server URL, with no
+// ServiceAccount token attached. Production always goes through NewClient; this
+// is the seam that lets tests outside this package drive the real Client,
+// Authenticator, PodCache and Resolver against a fake API server instead of
+// substituting a stub for them.
+func NewClientForURL(baseURL string, hc *http.Client) *Client {
+	if hc == nil {
+		hc = &http.Client{Timeout: 10 * time.Second}
+	}
+	return &Client{baseURL: baseURL, http: hc}
 }
 
 // doRequest issues one API call, JSON-encoding body (if any) and decoding a

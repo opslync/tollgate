@@ -32,18 +32,22 @@ import (
 // recordedRow mirrors one persisted requests row, including the usage_status
 // column that separates a flagged $0 from a genuine one.
 type recordedRow struct {
-	Agent        string
-	Team         string
-	Namespace    string
-	Model        string
-	Path         string
-	Status       int
-	CostUSD      float64
-	UsageStatus  string
-	InputTokens  int64
-	OutputTokens int64
-	CacheRead    int64
-	Stream       bool
+	Agent          string
+	Team           string
+	Namespace      string
+	Model          string
+	Path           string
+	Status         int
+	CostUSD        float64
+	UsageStatus    string
+	InputTokens    int64
+	OutputTokens   int64
+	CacheRead      int64
+	Stream         bool
+	Pod            string
+	WorkloadKind   string
+	Workload       string
+	ServiceAccount string
 }
 
 type harness struct {
@@ -92,6 +96,9 @@ type harnessOptions struct {
 	budgets      []config.Budget
 	providerType string // "anthropic" (default) or "openai"
 	upstream     http.Handler
+	// reviewer, when set, authenticates ServiceAccount tokens that miss the
+	// static key map — the same injection point main.go uses for internal/k8s.
+	reviewer auth.TokenReviewer
 }
 
 func newHarness(t *testing.T, opts harnessOptions) *harness {
@@ -142,8 +149,10 @@ func newHarness(t *testing.T, opts harnessOptions) *harness {
 	})
 
 	handler := engine.Middleware(p)
-	if len(opts.agents) > 0 {
-		handler = auth.New(opts.agents, nil).Middleware(handler)
+	// Same condition run() uses: a reviewer alone is enough to turn auth on,
+	// even with no static agent keys configured.
+	if len(opts.agents) > 0 || opts.reviewer != nil {
+		handler = auth.New(opts.agents, opts.reviewer).Middleware(handler)
 	}
 	h.server = httptest.NewServer(handler)
 	t.Cleanup(h.server.Close)
@@ -210,7 +219,8 @@ func rowsAt(t *testing.T, dbPath string) []recordedRow {
 
 	rs, err := db.QueryContext(context.Background(), `
 		SELECT agent, team, namespace, model, path, status, cost_usd, usage_status,
-		       input_tokens, output_tokens, cache_read_input_tokens, stream
+		       input_tokens, output_tokens, cache_read_input_tokens, stream,
+		       pod, workload_kind, workload, service_account
 		FROM requests ORDER BY id`)
 	if err != nil {
 		t.Fatal(err)
@@ -222,7 +232,8 @@ func rowsAt(t *testing.T, dbPath string) []recordedRow {
 		var r recordedRow
 		if err := rs.Scan(&r.Agent, &r.Team, &r.Namespace, &r.Model, &r.Path,
 			&r.Status, &r.CostUSD, &r.UsageStatus, &r.InputTokens, &r.OutputTokens,
-			&r.CacheRead, &r.Stream); err != nil {
+			&r.CacheRead, &r.Stream, &r.Pod, &r.WorkloadKind, &r.Workload,
+			&r.ServiceAccount); err != nil {
 			t.Fatal(err)
 		}
 		out = append(out, r)
