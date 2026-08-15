@@ -147,15 +147,32 @@ func (b *meteringBody) Read(p []byte) (int, error) {
 
 func (b *meteringBody) Close() error { return b.rc.Close() }
 
-// ServeHTTP forwards the request and, once the response body has fully
-// streamed to the client, emits one structured log line.
+// ServeHTTP forwards the request and, once the response body has finished
+// streaming to the client, records it and emits one structured log line.
 func (p *Proxy) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	start := time.Now()
 	state := &reqState{}
 	r = r.WithContext(context.WithValue(r.Context(), ctxKey{}, state))
 
-	p.rp.ServeHTTP(w, r)
+	// Metering runs in a defer because httputil.ReverseProxy panics with
+	// http.ErrAbortHandler when the client disconnects mid-response — once the
+	// headers are out there is no other way for it to signal failure. Without
+	// this defer, every cancelled stream would unwind straight past the
+	// recorder: the upstream has already consumed (and will bill for) the input
+	// tokens it declared in message_start, but Tollgate would store nothing,
+	// count nothing against the budget, and an agent could evade its limit
+	// entirely by hanging up mid-stream.
+	//
+	// The panic is deliberately not recovered — net/http still aborts the
+	// connection exactly as it would have.
+	defer p.finish(r, state, start)
 
+	p.rp.ServeHTTP(w, r)
+}
+
+// finish builds the RequestRecord for a completed (or aborted) request, hands
+// it to the Recorder, and writes the request log line.
+func (p *Proxy) finish(r *http.Request, state *reqState, start time.Time) {
 	rec := RequestRecord{
 		Time:       start,
 		Provider:   p.provider,

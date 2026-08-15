@@ -48,7 +48,10 @@ wired in `cmd/tollgate/main.go`:
 
 When the response body finishes streaming, the proxy builds a
 `RequestRecord` (agent, model, status, latency, parsed token usage) and
-hands it to a `Recorder` callback installed by `main.go`. That callback is
+hands it to a `Recorder` callback installed by `main.go`. This runs in a
+`defer`, so a client that disconnects mid-stream — which makes
+`httputil.ReverseProxy` panic with `http.ErrAbortHandler` — is still metered
+and attributed rather than vanishing. That callback is
 where the side effects happen: convert tokens to dollars via the pricing
 table, insert the record into SQLite, and feed the spend back into the
 budget engine's in-memory counters — which is what lets a runaway loop get
