@@ -141,7 +141,7 @@ func newHarness(t *testing.T, opts harnessOptions) *harness {
 		h.recorded <- rec
 	})
 
-	var handler http.Handler = engine.Middleware(p)
+	handler := engine.Middleware(p)
 	if len(opts.agents) > 0 {
 		handler = auth.New(opts.agents, nil).Middleware(handler)
 	}
