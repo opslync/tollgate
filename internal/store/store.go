@@ -38,7 +38,8 @@ CREATE TABLE IF NOT EXISTS requests (
 	pod TEXT NOT NULL DEFAULT '',
 	workload_kind TEXT NOT NULL DEFAULT '',
 	workload TEXT NOT NULL DEFAULT '',
-	service_account TEXT NOT NULL DEFAULT ''
+	service_account TEXT NOT NULL DEFAULT '',
+	usage_status TEXT NOT NULL DEFAULT ''
 );
 CREATE INDEX IF NOT EXISTS idx_requests_ts ON requests(ts);
 CREATE INDEX IF NOT EXISTS idx_requests_agent_ts ON requests(agent, ts);
@@ -79,9 +80,8 @@ func Open(path string) (*Store, error) {
 		db.Close()
 		return nil, fmt.Errorf("apply schema to %s: %w", path, err)
 	}
-	// CREATE TABLE IF NOT EXISTS silently ignores new columns on a pre-M7 DB,
-	// so evolve the schema explicitly. This is the first migration; if a
-	// second one is ever needed, a schema_version table is the right move.
+	// CREATE TABLE IF NOT EXISTS silently ignores new columns on an older DB,
+	// so evolve the schema explicitly with ALTER TABLE.
 	if err := migrate(db); err != nil {
 		db.Close()
 		return nil, fmt.Errorf("migrate %s: %w", path, err)
@@ -89,7 +89,7 @@ func Open(path string) (*Store, error) {
 	return &Store{db: db}, nil
 }
 
-// migrate adds any M7 columns missing from an older requests table, then
+// migrate adds any columns missing from an older requests table, then
 // creates the workload index (which depends on those columns existing).
 func migrate(db *sql.DB) error {
 	rows, err := db.Query(`PRAGMA table_info(requests)`)
@@ -114,7 +114,7 @@ func migrate(db *sql.DB) error {
 	}
 	rows.Close()
 
-	for _, col := range []string{"pod", "workload_kind", "workload", "service_account"} {
+	for _, col := range []string{"pod", "workload_kind", "workload", "service_account", "usage_status"} {
 		if have[col] {
 			continue
 		}
@@ -127,6 +127,27 @@ func migrate(db *sql.DB) error {
 }
 
 func (s *Store) Close() error { return s.db.Close() }
+
+// Usage status values recorded alongside every request, so a $0 row that is
+// genuinely free stays distinguishable from a $0 row we simply failed to
+// price. Without this, an unparseable usage block and a free request look
+// identical in the requests table.
+const (
+	// UsageOK: usage was parsed and the model was found in the pricing table.
+	// cost_usd is trustworthy.
+	UsageOK = "ok"
+	// UsageUnparsed: the response should have carried usage (a parser was
+	// attached to a 2xx body) but none was found — truncated JSON, a stream
+	// that ended before its usage event, or a 200 with no usage field.
+	// cost_usd is 0 because we do not know the real cost, not because it is 0.
+	UsageUnparsed = "usage_unparsed"
+	// UsageModelUnpriced: usage parsed fine, but the model has no entry in
+	// pricing.yaml. Token counts are trustworthy; cost_usd is 0 and is not.
+	UsageModelUnpriced = "model_unpriced"
+	// UsageNotMetered: no usage was expected — a non-2xx upstream response, or
+	// a content type that carries no usage block. cost_usd 0 is correct.
+	UsageNotMetered = "not_metered"
+)
 
 // Record is one proxied request, cost already converted at request time so
 // later pricing-table updates never rewrite history.
@@ -144,6 +165,9 @@ type Record struct {
 	Stream     bool
 	Usage      meter.Usage
 	CostUSD    float64
+	// UsageStatus is one of the Usage* constants above. Empty means "written
+	// by a Tollgate older than this column" — it is never written empty now.
+	UsageStatus string
 	// K8s-native attribution; empty for static-key-authenticated requests.
 	Pod            string
 	WorkloadKind   string
@@ -158,13 +182,13 @@ func (s *Store) Insert(ctx context.Context, r Record) error {
 			status, duration_ms, stream,
 			input_tokens, output_tokens,
 			cache_creation_input_tokens, cache_read_input_tokens, cost_usd,
-			pod, workload_kind, workload, service_account
-		) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+			pod, workload_kind, workload, service_account, usage_status
+		) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
 		r.Time.UnixMilli(), r.Agent, r.Team, r.Namespace, r.Provider, r.Model,
 		r.Method, r.Path, r.Status, r.DurationMS, r.Stream,
 		r.Usage.InputTokens, r.Usage.OutputTokens,
 		r.Usage.CacheCreationInputTokens, r.Usage.CacheReadInputTokens, r.CostUSD,
-		r.Pod, r.WorkloadKind, r.Workload, r.ServiceAccount,
+		r.Pod, r.WorkloadKind, r.Workload, r.ServiceAccount, r.UsageStatus,
 	)
 	return err
 }
@@ -250,6 +274,11 @@ type Row struct {
 	CacheCreationInputTokens int64   `json:"cache_creation_input_tokens"`
 	CacheReadInputTokens     int64   `json:"cache_read_input_tokens"`
 	CostUSD                  float64 `json:"cost_usd"`
+	// UnpricedRequests counts rows in this group whose cost could not be
+	// computed (usage unparseable, or model missing from the pricing table).
+	// CostUSD is a floor, not a total, whenever this is non-zero — that is the
+	// whole point of surfacing it next to the money.
+	UnpricedRequests int64 `json:"unpriced_requests"`
 }
 
 func (s *Store) Aggregate(ctx context.Context, opts AggregateOptions) ([]Row, error) {
@@ -265,7 +294,8 @@ func (s *Store) Aggregate(ctx context.Context, opts AggregateOptions) ([]Row, er
 		SELECT ` + col + `, COUNT(*),
 			SUM(input_tokens), SUM(output_tokens),
 			SUM(cache_creation_input_tokens), SUM(cache_read_input_tokens),
-			SUM(cost_usd)
+			SUM(cost_usd),
+			SUM(CASE WHEN usage_status IN ('` + UsageUnparsed + `', '` + UsageModelUnpriced + `') THEN 1 ELSE 0 END)
 		FROM requests
 		WHERE ts >= ? AND ts <= ?`
 	args := []any{opts.Since.UnixMilli(), opts.Until.UnixMilli()}
@@ -289,7 +319,8 @@ func (s *Store) Aggregate(ctx context.Context, opts AggregateOptions) ([]Row, er
 	for rows.Next() {
 		var r Row
 		if err := rows.Scan(&r.Key, &r.Requests, &r.InputTokens, &r.OutputTokens,
-			&r.CacheCreationInputTokens, &r.CacheReadInputTokens, &r.CostUSD); err != nil {
+			&r.CacheCreationInputTokens, &r.CacheReadInputTokens, &r.CostUSD,
+			&r.UnpricedRequests); err != nil {
 			return nil, err
 		}
 		out = append(out, r)

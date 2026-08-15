@@ -50,6 +50,11 @@ type RequestRecord struct {
 	Stream     bool
 	Usage      meter.Usage
 	UsageOK    bool
+	// Metered reports whether a usage parser was attached to this response at
+	// all. It separates "we expected usage and did not get it" (Metered &&
+	// !UsageOK — a real accounting gap) from "no usage was ever expected"
+	// (a content type that carries none), which otherwise look identical.
+	Metered bool
 	// K8s workload enrichment; zero-valued for static-key-authenticated requests.
 	Pod            string
 	WorkloadKind   string
@@ -192,6 +197,7 @@ func (p *Proxy) finish(r *http.Request, state *reqState, start time.Time) {
 		rec.ServiceAccount = wl.ServiceAccount
 	}
 	if state.parser != nil {
+		rec.Metered = true
 		rec.Usage, rec.UsageOK = state.parser.Finish()
 		rec.Model = rec.Usage.Model
 	}

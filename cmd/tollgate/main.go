@@ -38,6 +38,68 @@ func main() {
 	}
 }
 
+// newRecorder builds the callback the proxy invokes once a response has fully
+// streamed to the client: price the parsed usage, persist the row, and feed the
+// spend back into the budget engine's live counters.
+//
+// Note the ordering: st.Insert happens before engine.Record, so a re-sync that
+// lands between them counts the request twice for up to one refresh interval
+// (fail-closed by design — see internal/budget's package doc). Reversing it
+// would trade that transient overcount for a transient undercount, which is
+// the wrong bias for an enforcement path.
+func newRecorder(
+	st *store.Store,
+	prices *pricing.Table,
+	engine *budget.Engine,
+	tracer *trace.Exporter,
+	logger *slog.Logger,
+) proxy.Recorder {
+	return func(rec proxy.RequestRecord) {
+		record := store.Record{
+			Time: rec.Time, Agent: rec.Agent.Name, Team: rec.Agent.Team,
+			Namespace: rec.Agent.Namespace, Provider: rec.Provider,
+			Model: rec.Model, Method: rec.Method, Path: rec.Path,
+			Status: rec.Status, DurationMS: rec.DurationMS, Stream: rec.Stream,
+			Usage:          rec.Usage,
+			Pod:            rec.Pod,
+			WorkloadKind:   rec.WorkloadKind,
+			Workload:       rec.Workload,
+			ServiceAccount: rec.ServiceAccount,
+			UsageStatus:    store.UsageNotMetered,
+		}
+		switch {
+		case rec.Status < 200 || rec.Status >= 300 || !rec.Metered:
+			// No usage was ever expected from this response; $0 is the truth.
+		case !rec.UsageOK:
+			// A 2xx body that should have carried usage did not. Recording a
+			// clean $0 here would silently understate spend, so flag the row:
+			// the cost is unknown, not zero.
+			record.UsageStatus = store.UsageUnparsed
+			logger.Warn("response carried no parseable usage; cost unknown, recorded as 0",
+				"agent", rec.Agent.Name, "provider", rec.Provider,
+				"path", rec.Path, "status", rec.Status, "stream", rec.Stream)
+		default:
+			cost, priced := prices.Cost(rec.Model, rec.Usage)
+			record.CostUSD = cost
+			record.UsageStatus = store.UsageOK
+			if !priced {
+				record.UsageStatus = store.UsageModelUnpriced
+				logger.Warn("model missing from pricing table, cost recorded as 0", "model", rec.Model)
+			}
+		}
+		ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+		defer cancel()
+		if err := st.Insert(ctx, record); err != nil {
+			logger.Error("failed to persist usage record", "error", err)
+		}
+		engine.Record(rec.Agent, rec.Usage.InputTokens+rec.Usage.OutputTokens, record.CostUSD)
+		metrics.RecordRequest(rec, record.CostUSD)
+		if tracer != nil {
+			tracer.Export(rec, record.CostUSD)
+		}
+	}
+}
+
 func run() error {
 	configPath := flag.String("config", "config.yaml", "path to YAML config file")
 	logJSON := flag.Bool("log-json", false, "emit logs as JSON instead of text")
@@ -81,36 +143,7 @@ func run() error {
 		logger.Info("tracing enabled", "otlp_endpoint", cfg.Tracing.OTLPEndpoint)
 	}
 
-	recorder := func(rec proxy.RequestRecord) {
-		record := store.Record{
-			Time: rec.Time, Agent: rec.Agent.Name, Team: rec.Agent.Team,
-			Namespace: rec.Agent.Namespace, Provider: rec.Provider,
-			Model: rec.Model, Method: rec.Method, Path: rec.Path,
-			Status: rec.Status, DurationMS: rec.DurationMS, Stream: rec.Stream,
-			Usage:          rec.Usage,
-			Pod:            rec.Pod,
-			WorkloadKind:   rec.WorkloadKind,
-			Workload:       rec.Workload,
-			ServiceAccount: rec.ServiceAccount,
-		}
-		if rec.UsageOK {
-			cost, priced := prices.Cost(rec.Model, rec.Usage)
-			record.CostUSD = cost
-			if !priced {
-				logger.Warn("model missing from pricing table, cost recorded as 0", "model", rec.Model)
-			}
-		}
-		ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
-		defer cancel()
-		if err := st.Insert(ctx, record); err != nil {
-			logger.Error("failed to persist usage record", "error", err)
-		}
-		engine.Record(rec.Agent, rec.Usage.InputTokens+rec.Usage.OutputTokens, record.CostUSD)
-		metrics.RecordRequest(rec, record.CostUSD)
-		if tracer != nil {
-			tracer.Export(rec, record.CostUSD)
-		}
-	}
+	recorder := newRecorder(st, prices, engine, tracer, logger)
 
 	// One proxy per configured provider; requests route by path below.
 	proxies := map[string]*proxy.Proxy{} // keyed by provider type
