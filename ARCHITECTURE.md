@@ -95,7 +95,7 @@ Two SQLite tables, created and migrated by `internal/store` on startup:
   `usage_status` records whether that cost is trustworthy (`ok`,
   `usage_unparsed`, `model_unpriced`, `not_metered`) so a flagged $0 row stays
   distinguishable from a genuinely free one; `GET /usage` surfaces the count as
-  `unpriced_requests`.
+  `unpriced_requests`. See [correctness.md](docs/correctness.md).
 - **`kills`** — one row per currently-killed agent name. Existence in this
   table is the persisted kill state; `budget.Engine` loads it at startup and
   keeps its own in-memory copy for zero-latency checks.

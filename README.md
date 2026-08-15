@@ -181,6 +181,8 @@ In production, agents in the cluster point at `http://tollgate.<namespace>.svc:8
 - **Zero-dependency install.** Single static Go binary, SQLite storage, one YAML config file. Runs locally with nothing else; a [Helm chart](deploy/helm/tollgate) packages it for Kubernetes.
 - **Open source.** Apache-2.0.
 
+What we guarantee about your spend numbers under restarts, concurrency, cancellation, and malformed upstream responses — and the tests that prove each one: [`docs/correctness.md`](docs/correctness.md).
+
 ## Roadmap
 
 | Milestone | Scope |

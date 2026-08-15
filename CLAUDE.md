@@ -56,7 +56,7 @@ pricing/           — versioned pricing.yaml (embedded via go:embed) + cost con
 Later milestones add `deploy/helm` (M6). Don't create directories before their milestone.
 
 Metering notes:
-- Cost is computed and stored at request time — pricing table updates never rewrite history. Unknown models record cost 0 with a warning log, plus a `usage_status` of `model_unpriced` on the row (values: `ok` / `usage_unparsed` / `model_unpriced` / `not_metered`) so a flagged $0 never looks like a free request; `GET /usage` exposes the count as `unpriced_requests`.
+- Cost is computed and stored at request time — pricing table updates never rewrite history. Unknown models record cost 0 with a warning log, plus a `usage_status` of `model_unpriced` on the row (values: `ok` / `usage_unparsed` / `model_unpriced` / `not_metered`) so a flagged $0 never looks like a free request; `GET /usage` exposes the count as `unpriced_requests`. Invariants and their tests: [docs/correctness.md](docs/correctness.md).
 - SQLite runs WAL + busy_timeout(5000) and `SetMaxOpenConns(1)` — SQLite has one writer, and a pool just fights over the lock until busy_timeout expires, which silently dropped ~29% of usage records at 200 concurrent requests. The pure-Go driver keeps `CGO_ENABLED=0` static builds (it also forced go.mod to go 1.25).
 - `GET /usage` group_by is an allowlist (agent/team/namespace/model/provider) — never interpolate caller input into SQL.
 
