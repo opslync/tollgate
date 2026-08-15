@@ -54,6 +54,8 @@ Single Go binary, three middleware stages, SQLite for storage. Full request-flow
 
 Tollgate deliberately doesn't do model routing, fallback, or caching — that's the gateways' fight, and mixing it in dilutes what Tollgate is actually for.
 
+None of the rows above are just claims — [`docs/correctness.md`](docs/correctness.md) is the test suite that proves attribution and budgets hold up under restarts, concurrency, cancellation, and adversarial input, with every bound that doesn't fully close published rather than hidden.
+
 ## Other ways to run it
 
 <details>

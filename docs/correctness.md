@@ -75,7 +75,10 @@ is a proxy-wide semantic change with its own new failure modes, so for now the
 bound is published rather than papered over.
 
 If you need a hard ceiling rather than a soft one, cap concurrency at the agent
-and size the budget to absorb one burst.
+and size the budget to absorb one burst. Closing the gap properly — rather than
+mitigating around it — is tracked in
+[opslync/tollgate#17](https://github.com/opslync/tollgate/issues/17), with a
+reserve-then-commit design sketch.
 
 ### The hard-kill window
 
