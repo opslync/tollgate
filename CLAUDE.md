@@ -57,7 +57,7 @@ Later milestones add `deploy/helm` (M6). Don't create directories before their m
 
 Metering notes:
 - Cost is computed and stored at request time — pricing table updates never rewrite history. Unknown models record cost 0 with a warning log.
-- SQLite runs WAL + busy_timeout(5000); the pure-Go driver keeps `CGO_ENABLED=0` static builds (it also forced go.mod to go 1.25).
+- SQLite runs WAL + busy_timeout(5000) and `SetMaxOpenConns(1)` — SQLite has one writer, and a pool just fights over the lock until busy_timeout expires, which silently dropped ~29% of usage records at 200 concurrent requests. The pure-Go driver keeps `CGO_ENABLED=0` static builds (it also forced go.mod to go 1.25).
 - `GET /usage` group_by is an allowlist (agent/team/namespace/model/provider) — never interpolate caller input into SQL.
 
 Budget enforcement notes:

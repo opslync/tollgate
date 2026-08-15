@@ -63,6 +63,18 @@ func Open(path string) (*Store, error) {
 	if err != nil {
 		return nil, err
 	}
+	// SQLite allows exactly one writer, so let database/sql queue statements on
+	// a single connection instead of opening a pool that fights over the write
+	// lock. Without this, a burst of concurrent requests exhausts busy_timeout
+	// and Insert returns SQLITE_BUSY — which the recorder can only log, silently
+	// dropping that request's spend. Measured at 200 concurrent requests before
+	// this line: ~29% of usage records lost. After: none.
+	//
+	// The cost is that reads (GET /usage, the budget re-sync) queue behind
+	// writes on the same connection. Both are infrequent and small, and the
+	// deployment is a single replica with a local file by design — losing money
+	// records to lock contention is not a trade worth making for read parallelism.
+	db.SetMaxOpenConns(1)
 	if _, err := db.Exec(schema); err != nil {
 		db.Close()
 		return nil, fmt.Errorf("apply schema to %s: %w", path, err)
