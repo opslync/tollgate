@@ -72,3 +72,13 @@ teams:
     namespaces: [payments, payments-staging]
   - name: search
     namespaces: [search]
+
+# OTLP/HTTP trace export (optional; disabled by default so non-observability
+# installs stay zero-dependency). One span per proxied request, with
+# gen_ai.* and tollgate.* attributes (agent, team, namespace, cost, token
+# counts), POSTed as JSON to otlp_endpoint. Export is fire-and-forget — a
+# slow or unreachable collector never blocks a proxied request. The
+# endpoint's scheme (http/https) decides plaintext vs TLS.
+tracing:
+  enabled: false
+  # otlp_endpoint: "http://otel-collector.monitoring.svc:4318/v1/traces"
