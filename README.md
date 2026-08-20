@@ -3,6 +3,7 @@
 [![CI](https://github.com/opslync/tollgate/actions/workflows/ci.yml/badge.svg)](https://github.com/opslync/tollgate/actions/workflows/ci.yml)
 [![License](https://img.shields.io/badge/license-Apache--2.0-blue.svg)](LICENSE)
 [![Image](https://img.shields.io/badge/ghcr.io-opslync%2Ftollgate-blue)](https://github.com/opslync/tollgate/pkgs/container/tollgate)
+[![Docs](https://img.shields.io/badge/docs-opslync.github.io%2Ftollgate-blue)](https://opslync.github.io/tollgate/)
 
 ![Tollgate demo: a request is attributed to an agent, a tiny budget alerts then hard-blocks with a 403, and the kill switch cuts the agent off mid-incident](deploy/compose/demo.gif)
 
