@@ -1,0 +1,57 @@
+site_name: Tollgate
+site_url: https://opslync.github.io/tollgate/
+site_description: >-
+  See, budget, and control every token and tool call your AI agents make
+  inside your own cluster.
+repo_url: https://github.com/opslync/tollgate
+repo_name: opslync/tollgate
+edit_uri: ""
+
+theme:
+  name: material
+  features:
+    - content.code.copy
+    - navigation.instant
+    - navigation.top
+    - toc.follow
+  palette:
+    - media: "(prefers-color-scheme: light)"
+      scheme: default
+      primary: indigo
+      accent: indigo
+      toggle:
+        icon: material/weather-night
+        name: Switch to dark mode
+    - media: "(prefers-color-scheme: dark)"
+      scheme: slate
+      primary: indigo
+      accent: indigo
+      toggle:
+        icon: material/weather-sunny
+        name: Switch to light mode
+
+# Make `mkdocs build --strict` fail on a broken cross-page anchor too, not
+# just a missing file — the docs link into each other's headings a lot.
+validation:
+  links:
+    anchors: warn
+    unrecognized_links: warn
+
+markdown_extensions:
+  - admonition
+  - attr_list
+  - pymdownx.highlight:
+      anchor_linenums: true
+  - pymdownx.superfences
+  - toc:
+      permalink: true
+
+nav:
+  - Home: index.md
+  - Quickstart (Compose): quickstart-compose.md
+  - Quickstart (Kubernetes): quickstart-k8s.md
+  - Configuration: configuration.md
+  - Grafana: grafana.md
+  - Correctness: correctness.md
+  - Roadmap: roadmap.md
+  - Blog: blog/testing-budget-enforcement.md

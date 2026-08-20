@@ -2,11 +2,11 @@
 
 `/metrics` is always on — no config needed, same port as the proxy, unauthenticated like `/healthz`. This walks through wiring it into a Prometheus Operator setup (e.g. [kube-prometheus-stack](https://github.com/prometheus-community/helm-charts/tree/main/charts/kube-prometheus-stack)) and importing the shipped dashboard.
 
-Want this running in one command with no cluster and no API key? See the [docker-compose quickstart](../deploy/compose/) instead — it's the fastest way to see every panel populated.
+Want this running in one command with no cluster and no API key? See the [docker-compose quickstart](quickstart-compose.md) instead — it's the fastest way to see every panel populated.
 
 ## Prereqs
 
-- Tollgate installed via the [kind quickstart](../README.md#kubernetes-kind-quickstart) (or any cluster with the Helm chart installed).
+- Tollgate installed via the [kind quickstart](quickstart-k8s.md) (or any cluster with the Helm chart installed).
 - A Prometheus Operator. If you don't have one yet, the fast path:
 
   ```sh
@@ -39,7 +39,7 @@ Open `http://localhost:9090/targets` — you should see a `tollgate` target in s
 
 ## 3. Import the dashboard
 
-In Grafana: **Dashboards → New → Import**, upload [`deploy/grafana/tollgate-dashboard.json`](../deploy/grafana/tollgate-dashboard.json), and pick your Prometheus datasource when prompted (the dashboard ships with a templated datasource input, so it isn't hardcoded to whichever Grafana it was exported from).
+In Grafana: **Dashboards → New → Import**, upload [`deploy/grafana/tollgate-dashboard.json`](https://github.com/opslync/tollgate/blob/main/deploy/grafana/tollgate-dashboard.json), and pick your Prometheus datasource when prompted (the dashboard ships with a templated datasource input, so it isn't hardcoded to whichever Grafana it was exported from).
 
 ## 4. What "done" looks like
 
@@ -47,7 +47,7 @@ Send a request or two through Tollgate, then watch the **Spend by agent** panel 
 
 ![Tollgate dashboard in Grafana: spend, requests/sec, and tokens by agent; budget-consumed gauges and a budget-state timeline going OK -> Alert -> Blocked; p95 latency; denied requests climbing](img/grafana-dashboard.png)
 
-With the chart's production defaults (`agents: []`, `budgets: []`) most panels have nothing to group by, so a first install can look broken even though scraping is working fine. [`values-demo.yaml`](../deploy/helm/tollgate/values-demo.yaml) configures two demo agents/budgets specifically so every panel — including budget state and denied requests, which need an agent to actually hit a budget — has something to show:
+With the chart's production defaults (`agents: []`, `budgets: []`) most panels have nothing to group by, so a first install can look broken even though scraping is working fine. [`values-demo.yaml`](https://github.com/opslync/tollgate/blob/main/deploy/helm/tollgate/values-demo.yaml) configures two demo agents/budgets specifically so every panel — including budget state and denied requests, which need an agent to actually hit a budget — has something to show:
 
 ```sh
 helm install tollgate deploy/helm/tollgate -f deploy/helm/tollgate/values-demo.yaml \
