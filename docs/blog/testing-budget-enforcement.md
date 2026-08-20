@@ -54,7 +54,7 @@ Smaller, this one. A stored request could show a cost of $0 for three different 
 
 The fix was a column, `usage_status`, recording which of the three applied, plus a count of flagged rows shown next to the total so a suspicious $0 doesn't read as a clean one.
 
-(Test: [`pricing/pricing_correctness_test.go`](https://github.com/opslync/tollgate/blob/main/pricing/pricing_correctness_test.go).)
+(Tests: [`cmd/tollgate/metering_correctness_test.go`](https://github.com/opslync/tollgate/blob/main/cmd/tollgate/metering_correctness_test.go) for the three-way flag itself, [`pricing/pricing_correctness_test.go`](https://github.com/opslync/tollgate/blob/main/pricing/pricing_correctness_test.go) for the unknown-model case specifically.)
 
 ## The one I didn't fix
 
@@ -74,6 +74,6 @@ If the test had still passed with the code broken, it wouldn't have been telling
 
 ## What's there now
 
-The suite that came out of this covers five groups of invariants, durability, concurrency, metering accuracy, attribution, and identity, seventeen tests in total, running in their own CI job on every push. The full table, including the two bounds published above instead of quietly fixed, is at [correctness.md](../correctness.md) if you'd rather check this against the actual tests than take my word for it.
+The suite that came out of this covers five groups of invariants, durability, concurrency, metering accuracy, attribution, and identity, seventeen tests in total, running in their own CI job on every push. The full table, including the two bounds published above instead of quietly fixed, is at [correctness.md](https://opslync.github.io/tollgate/correctness/) if you'd rather check this against the actual tests than take my word for it.
 
 Tollgate is what all of this sits under: a proxy in front of an agent's LLM calls that attributes spend to whichever agent made it and enforces a budget on it in real time, which is the reason getting these numbers right mattered enough to spend a week on before building the next feature.
